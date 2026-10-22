@@ -1,8 +1,8 @@
 using System.Windows;
-using Cleaner.Core;
+using Spacewise.Core;
 using Microsoft.Win32;
 
-namespace Cleaner.Desktop;
+namespace Spacewise.Desktop;
 public partial class MainWindow : Window
 {
     private CancellationTokenSource? cancellation;

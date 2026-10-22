@@ -1,4 +1,4 @@
-namespace Cleaner.Core;
+namespace Spacewise.Core;
 
 public enum ScanState { Idle, Scanning, Completed, Partial, Cancelled, Failed }
 public sealed record ScanRequest(string Root, IReadOnlyList<string> Exclusions, int MaximumFiles = 500_000,

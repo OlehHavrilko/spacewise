@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Cleaner.Core;
+namespace Spacewise.Core;
 
 public sealed class MetadataScanner : IScanner
 {

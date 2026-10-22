@@ -1,6 +1,6 @@
-using Cleaner.Core;
+using Spacewise.Core;
 
-string fixture = Path.Combine(Path.GetTempPath(), "CleanerSmoke-" + Guid.NewGuid().ToString("N"));
+string fixture = Path.Combine(Path.GetTempPath(), "SpacewiseSmoke-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(fixture);
 int count = 0;
 void Assert(bool condition, string message) { if (!condition) throw new Exception(message); Console.WriteLine("PASS " + message); count++; }

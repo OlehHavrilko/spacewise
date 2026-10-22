@@ -1,5 +1,5 @@
 using System.Windows;
-namespace Cleaner.Desktop;
+namespace Spacewise.Desktop;
 public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
@@ -7,7 +7,7 @@ public partial class App : Application
         if (e.Args.SequenceEqual(["--smoke-test"]))
         {
             var window = new MainWindow();
-            int exitCode = window.Title == "Cleaner — только анализ" && window.MinWidth == 960 ? 0 : 1;
+            int exitCode = window.Title == "Spacewise — только анализ" && window.MinWidth == 960 ? 0 : 1;
             window.Close();
             Shutdown(exitCode);
             return;

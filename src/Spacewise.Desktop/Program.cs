@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Spacewise.Core;
+using Spacewise.Data;
+using Spacewise.Platform.Windows;
 
 namespace Spacewise.Desktop;
 
@@ -15,6 +17,11 @@ public static class Program
         });
         builder.Services.AddSingleton<IScanner, MetadataScanner>();
         builder.Services.AddSingleton<IScanService, ScanService>();
+        string data = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spacewise");
+        builder.Services.AddSingleton<IDatabaseKeySource>(new DpapiKeySource(System.IO.Path.Combine(data, "keys")));
+        builder.Services.AddSingleton(sp => new DatabaseWriter(
+            SqliteDatabase.Open(System.IO.Path.Combine(data, "cache.db"), Schemas.Cache, sp.GetRequiredService<IDatabaseKeySource>()).Connection));
+        builder.Services.AddSingleton<ScanStore>();
         builder.Services.AddTransient<MainViewModel>();
         builder.Services.AddTransient<MainWindow>();
         using IHost host = builder.Build();

@@ -15,7 +15,9 @@ public sealed class QuarantineService(ExecutionStore store, IQuarantinePurger pu
     public async Task<PurgeReport> PurgeExpiredAsync(CancellationToken cancellation = default)
     {
         DateTime now = time.GetUtcNow().UtcDateTime;
-        return await PurgeAsync([.. (await store.HeldAsync(cancellation)).Where(f => f.ExpiresUtc <= now)], cancellation);
+        PurgeReport report = await PurgeAsync([.. (await store.HeldAsync(cancellation)).Where(f => f.ExpiresUtc <= now)], cancellation);
+        await store.TrimPurgedRecordsAsync(now, cancellation);
+        return report;
     }
 
     public async Task<PurgeReport> PurgeAllAsync(CancellationToken cancellation = default) =>

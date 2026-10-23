@@ -59,7 +59,7 @@ public interface IConfirmation
 }
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
-    ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, IConfirmation confirmation, TimeProvider time) : ObservableObject
+    ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IConfirmation confirmation, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -180,8 +180,8 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         try
         {
             long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
-            ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation), CancellationToken.None);
-            await executions.RecordAsync(planId, report, time.GetUtcNow().UtcDateTime, cancellation: CancellationToken.None);
+            ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
+            await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
             var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
             CleanupStatus = $"В карантине: {DisplayFormat.Count(report.Removed)} файлов (логически {DisplayFormat.Size(report.BytesRemoved)})"
                 + (report.Cancelled ? "; остановлено пользователем" : "")
@@ -198,7 +198,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private static string Skipped(RemoveStatus status) => status switch
     {
         RemoveStatus.Gone => "уже нет", RemoveStatus.Changed => "изменены после оценки", RemoveStatus.Locked => "заняты",
-        RemoveStatus.Unsafe => "отклонены защитой", _ => "ошибка",
+        RemoveStatus.Unsafe => "отклонены защитой", RemoveStatus.Interrupted => "прерваны", _ => "ошибка",
     };
 
     // Called when the window opens: files past their retention are deleted for good, then the quarantine is summarised.
@@ -206,8 +206,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     {
         try
         {
+            RecoveryReport recovered = await recovery.RecoverAsync();
             PurgeReport expired = await Task.Run(() => quarantine.PurgeExpiredAsync());
-            await RefreshQuarantineAsync(expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : "");
+            await RefreshQuarantineAsync((recovered.NeverMoved + recovered.Recovered + recovered.Unknown > 0
+                    ? $"После прерванной очистки: не тронуто {DisplayFormat.Count(recovered.NeverMoved)}, найдено в карантине {DisplayFormat.Count(recovered.Recovered)}, неясно {DisplayFormat.Count(recovered.Unknown)}. " : "")
+                + (recovered.UnrecordedFiles > 0 ? $"Неучтённых файлов в карантине: {DisplayFormat.Count(recovered.UnrecordedFiles)}. " : "")
+                + (expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : ""));
         }
         catch (Exception ex) { QuarantineStatus = "Карантин недоступен: " + ex.Message; }
     }

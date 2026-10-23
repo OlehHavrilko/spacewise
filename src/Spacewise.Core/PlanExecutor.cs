@@ -10,6 +10,14 @@ public interface IFileRemover
     RemoveResult Remove(PlanItem item);
 }
 
+public sealed record RestoreResult(bool Restored, int Code = 0);
+
+public interface IFileRestorer
+{
+    // Puts a quarantined file back under its original name; never replaces an existing file.
+    RestoreResult Restore(string storedPath, string originalPath);
+}
+
 public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0, string? StoredPath = null);
 
 public sealed record ExecutionReport(IReadOnlyList<ItemOutcome> Outcomes, bool Cancelled)
@@ -26,8 +34,8 @@ public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, Time
 {
     public ExecutionReport Execute(CleanupPlan plan, CancellationToken cancellation = default)
     {
-        if (!plan.DigestMatches()) throw new PlanRejectedException("План изменён: digest не совпал.");
-        if (time.GetUtcNow().UtcDateTime >= plan.ExpiresUtc) throw new PlanRejectedException("План устарел, постройте его заново.");
+        PolicyDecision decision = MutationPolicy.Evaluate(plan, time.GetUtcNow().UtcDateTime);
+        if (!decision.Allowed) throw new PlanRejectedException(decision.Reason);
 
         var outcomes = new List<ItemOutcome>(plan.Items.Count);
         foreach (PlanItem item in plan.Items)

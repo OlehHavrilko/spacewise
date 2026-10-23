@@ -13,7 +13,7 @@ public sealed record FileRow(string Path, string Size, string OnDisk, string Not
         f.IsHardLinked ? $"Жёсткая ссылка ({f.Links}): 0 байт выгоды" : "");
 }
 
-// One catalog rule in the cleanup estimate. Nothing here deletes: the executor is a later step.
+// One catalog rule in the cleanup estimate.
 public sealed record CleanupRow(string Title, string Files, string Estimate, string Consequence, string Note, string SideEffects)
 {
     public static CleanupRow From(RulePreview p)
@@ -39,7 +39,14 @@ public sealed record CleanupRow(string Title, string Files, string Estimate, str
     }
 }
 
-public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup) : ObservableObject
+// Asks the user before anything is moved; a view concern, so the view model sees only this seam.
+public interface IConfirmation
+{
+    bool Confirm(string title, string message);
+}
+
+public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
+    ExecutionStore executions, PlanExecutor executor, IFileRestorer restorer, IConfirmation confirmation, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -52,6 +59,10 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial string CleanupStatus { get; set; } = "Оценка не выполнялась";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
+    [ObservableProperty] public partial string QuarantineStatus { get; set; } = "";
+
+    private CleanupPlan? plan;
+    private IReadOnlyList<RulePreview> planned = [];
 
     // ScanCommand.IsRunning drives busy state; ScanCancelCommand is generated alongside it.
     [RelayCommand(IncludeCancelCommand = true)]
@@ -69,7 +80,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             Status = result.State == ScanState.RootNotFound
                 ? $"Анализ не выполнен: папка не найдена — {result.Root}"
                 : $"{Display(result.State)} · файлов: {DisplayFormat.Count(result.Files)} · логически: {DisplayFormat.Size(result.LogicalBytes)}";
-            Details = Coverage(result) + "\nЭто логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Очистка и модель отсутствуют.\n"
+            Details = Coverage(result) + "\nЭто логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Модель отсутствует.\n"
                 + string.Join("\n", result.Diagnostics);
             // The cache is regenerable: a failed save is reported, not fatal.
             try { await history.SaveAsync(result, DateTime.UtcNow, CancellationToken.None); }
@@ -88,6 +99,9 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private async Task PreviewCleanupAsync(CancellationToken cancellation)
     {
         Cleanup = [];
+        plan = null;
+        planned = [];
+        CleanCommand.NotifyCanExecuteChanged();
         IsBusy = true;
         CleanupStatus = "Оценка выполняется…";
         try
@@ -95,13 +109,88 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             IReadOnlyList<RulePreview> previews = await Task.Run(() => cleanup.Preview(cancellation), cancellation);
             RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0).OrderByDescending(p => p.LogicalBytes)];
             Cleanup = [.. found.Select(CleanupRow.From)];
+            planned = found;
+            plan = PlanBuilder.Build(found, time.GetUtcNow().UtcDateTime);
+            CleanCommand.NotifyCanExecuteChanged();
             CleanupStatus = found.Length == 0
                 ? "По правилам каталога ничего не найдено"
                 : $"Оценка: {DisplayFormat.Size(found.Sum(p => p.LogicalBytes))} в {DisplayFormat.Count(found.Length)} категориях. "
-                  + "Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Удаление пока недоступно.";
+                  + "Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Очистка переносит файлы в карантин.";
         }
         catch (OperationCanceledException) { CleanupStatus = "Оценка остановлена"; }
         catch (Exception ex) { CleanupStatus = "Оценка не выполнена: " + ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private bool CanClean() => plan is { Items.Count: > 0 };
+
+    // Quarantine is the default and only method: files are moved, not erased, and can be put back.
+    [RelayCommand(CanExecute = nameof(CanClean), IncludeCancelCommand = true)]
+    private async Task CleanAsync(CancellationToken cancellation)
+    {
+        CleanupPlan current = plan!;
+        PolicyDecision decision = MutationPolicy.Evaluate(current, time.GetUtcNow().UtcDateTime);
+        if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
+        string message = $"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}) "
+            + $"из категорий: {DisplayFormat.Count(planned.Count(p => p.Items.Count > 0))}.\n\n"
+            + "Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина». Занятые и изменённые после оценки файлы будут пропущены. "
+            + "Место на диске не освободится, пока карантин не очищен.\n\nПродолжить?";
+        if (!confirmation.Confirm("Очистка", message)) { CleanupStatus = "Очистка отменена"; return; }
+
+        IsBusy = true;
+        CleanupStatus = "Очистка выполняется…";
+        try
+        {
+            long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
+            ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation), CancellationToken.None);
+            await executions.RecordAsync(planId, report, time.GetUtcNow().UtcDateTime, cancellation: CancellationToken.None);
+            var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
+            CleanupStatus = $"В карантине: {DisplayFormat.Count(report.Removed)} файлов (логически {DisplayFormat.Size(report.BytesRemoved)})"
+                + (report.Cancelled ? "; остановлено пользователем" : "")
+                + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "")
+                + ". Оценка устарела, выполните её заново.";
+            QuarantineStatus = "Есть файлы в карантине";
+            Cleanup = [];
+            plan = null;
+            planned = [];
+            CleanCommand.NotifyCanExecuteChanged();
+        }
+        catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
+        catch (Exception ex) { CleanupStatus = "Очистка не выполнена: " + ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private static string Skipped(RemoveStatus status) => status switch
+    {
+        RemoveStatus.Gone => "уже нет", RemoveStatus.Changed => "изменены после оценки", RemoveStatus.Locked => "заняты",
+        RemoveStatus.Unsafe => "отклонены защитой", _ => "ошибка",
+    };
+
+    [RelayCommand]
+    private async Task RestoreAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            IReadOnlyList<ExecutionStore.QuarantinedFile> held = await executions.HeldAsync();
+            if (held.Count == 0) { QuarantineStatus = "Карантин пуст"; return; }
+            int restored = 0, failed = 0;
+            await Task.Run(async () =>
+            {
+                foreach (ExecutionStore.QuarantinedFile file in held)
+                {
+                    if (restorer.Restore(file.StoredPath, file.OriginalPath).Restored)
+                    {
+                        await executions.MarkRestoredAsync(file.Id, time.GetUtcNow().UtcDateTime);
+                        restored++;
+                    }
+                    else failed++;
+                }
+            });
+            QuarantineStatus = $"Возвращено: {DisplayFormat.Count(restored)}"
+                + (failed > 0 ? $"; не удалось: {DisplayFormat.Count(failed)} (на месте уже есть файл или карантин недоступен)" : "");
+        }
+        catch (Exception ex) { QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
         finally { IsBusy = false; }
     }
 

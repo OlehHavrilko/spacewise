@@ -205,6 +205,32 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             return delete.ExecuteNonQuery();
         }, cancellation);
 
+    public sealed record DecisionRow(long Id, DateTime TimeUtc, string Action, string Result, string Category, long Bytes, string Path);
+
+    // Newest first, for the "История" tab.
+    public Task<IReadOnlyList<DecisionRow>> RecentDecisionsAsync(int limit, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync<IReadOnlyList<DecisionRow>>(connection =>
+        {
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "SELECT id, ts, user_action, executor_result, category, bytes, path_enc FROM decision_journal ORDER BY id DESC LIMIT $limit";
+            query.Parameters.AddWithValue("$limit", limit);
+            using SqliteDataReader r = query.ExecuteReader();
+            var list = new List<DecisionRow>();
+            while (r.Read())
+                list.Add(new(r.GetInt64(0), DateTime.Parse(r.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime(),
+                    r.GetString(2), r.GetString(3), r.GetString(4), r.GetInt64(5), System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(6))));
+            return list;
+        }, cancellation);
+
+    public Task<string?> GetSettingAsync(string key, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(connection =>
+        {
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "SELECT value_json FROM settings WHERE key = $key";
+            query.Parameters.AddWithValue("$key", key);
+            return query.ExecuteScalar() as string;
+        }, cancellation);
+
     // Null when the decision journal chain is intact, otherwise the first broken row id.
     public Task<long?> VerifyJournalAsync(CancellationToken cancellation = default) =>
         journal.ExecuteAsync(DecisionJournal.FirstBrokenRow, cancellation);

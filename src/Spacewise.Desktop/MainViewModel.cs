@@ -84,7 +84,7 @@ public interface IConfirmation
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
     ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IRecycleBin recycleBin, IVolumeSpace space,
-    IConfirmation confirmation, IFileDialogs dialogs, TimeProvider time) : ObservableObject
+    IConfirmation confirmation, IFileDialogs dialogs, IVolumeCatalog volumeCatalog, VolumeHistory volumeHistory, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -292,6 +292,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 + (recovered.UnrecordedFiles > 0 ? $"Неучтённых файлов в карантине: {DisplayFormat.Count(recovered.UnrecordedFiles)}. " : "")
                 + (expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : ""));
             await RefreshHistoryAsync();
+            await RefreshDisksAsync();
         }
         catch (Exception ex) { AppLog.Failure("Startup recovery", ex); QuarantineStatus = "Карантин недоступен: " + ex.Message; }
     }
@@ -440,6 +441,58 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         ShowWelcome = false;
         try { await executions.SaveSettingAsync("onboarded", "true"); }
         catch (Exception ex) { AppLog.Failure("Onboarding flag", ex); }
+    }
+
+    public sealed record DiskRow(string Name, string Label, string FileSystem, string Total, string Free, string Used, string Forecast);
+
+    [ObservableProperty] public partial IReadOnlyList<DiskRow> Disks { get; set; } = [];
+    [ObservableProperty] public partial string DisksStatus { get; set; } = "";
+
+    private static string ForecastText(FillForecast f, DateTime now) => f.Kind switch
+    {
+        ForecastKind.NotEnoughData => $"Данных пока мало: нужно не меньше {FillForecast.MinimumPoints} замеров за {FillForecast.MinimumSpanDays} дней",
+        ForecastKind.NotShrinking => "Свободное место не убывает",
+        _ => $"Заполнится примерно {now.AddDays(f.Days!.Value).ToLocalTime():d} (через {DisplayFormat.Count((long)f.Days.Value)} дн.; "
+            + (f.HighDays is double high ? $"от {DisplayFormat.Count((long)f.LowDays!.Value)} до {DisplayFormat.Count((long)high)} дн." : $"не раньше чем через {DisplayFormat.Count((long)f.LowDays!.Value)} дн.") + ")",
+    };
+
+    // §5.4: a snapshot per volume on each start (at most one an hour), then a trend line over the last 90 days.
+    private async Task RefreshDisksAsync()
+    {
+        try
+        {
+            DateTime now = time.GetUtcNow().UtcDateTime;
+            IReadOnlyList<VolumeInfo> volumes = await Task.Run(volumeCatalog.Fixed);
+            await volumeHistory.RecordAsync(volumes, now);
+            var rows = new List<DiskRow>();
+            foreach (VolumeInfo v in volumes)
+            {
+                FillForecast forecast = FillForecast.From(await volumeHistory.PointsAsync(v.VolumeGuid), now);
+                rows.Add(new(v.Root, v.Label, v.FileSystem, DisplayFormat.Size(v.TotalBytes), DisplayFormat.Size(v.FreeBytes),
+                    v.TotalBytes > 0 ? $"{100 - 100.0 * v.FreeBytes / v.TotalBytes:0} %" : "—", ForecastText(forecast, now)));
+            }
+            Disks = rows;
+            DisksStatus = rows.Count == 0 ? "Фиксированные диски не найдены" : $"Дисков: {DisplayFormat.Count(rows.Count)}. Прогноз строится по замерам при запуске, ему нужно несколько дней.";
+        }
+        catch (Exception ex) { AppLog.Failure("Disks", ex); DisksStatus = "Диски не прочитаны: " + ex.Message; }
+    }
+
+    // FR-USE-008: removes what Spacewise itself stored (volume history). Windows' own launch records are not touched.
+    [RelayCommand]
+    private async Task EraseHistoryAsync()
+    {
+        if (!confirmation.Confirm("Стереть историю", "Будет удалена история замеров дисков, которую хранит Spacewise. Журнал Windows о запусках программ не затрагивается, журнал действий очистки тоже остаётся.\n\nПродолжить?"))
+            return;
+        try
+        {
+            int removed = await volumeHistory.EraseAsync();
+            UsageRows = [];
+            UsageSummary = "";
+            UsageStatus = $"История стёрта: замеров дисков удалено {DisplayFormat.Count(removed)}. Данные использования Spacewise не хранит.";
+            AppLog.Info("History erased: {Snapshots} snapshots", removed);
+            await RefreshDisksAsync();
+        }
+        catch (Exception ex) { AppLog.Failure("Erase history", ex); UsageStatus = "История не стёрта: " + ex.Message; }
     }
 
     [ObservableProperty] public partial IReadOnlyList<UsageRow> UsageRows { get; set; } = [];

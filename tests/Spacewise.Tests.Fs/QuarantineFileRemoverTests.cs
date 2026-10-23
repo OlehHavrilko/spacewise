@@ -73,4 +73,43 @@ public sealed class QuarantineFileRemoverTests : IDisposable
         Assert.False(remover.Restore(file, Path.Combine(fx.Root, "e.bin")).Restored);
         Assert.True(File.Exists(file));
     }
+
+    [Fact]
+    public void Move_records_the_sha256_of_the_content()
+    {
+        string file = fx.File("s.bin", 0);
+        File.WriteAllText(file, "hash me");
+        RemoveResult result = remover.Remove(ItemFor(file));
+        Assert.Equal(RemoveStatus.Removed, result.Status);
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData("hash me"u8), result.Sha256);
+    }
+
+    [Fact]
+    public void Purge_deletes_a_quarantined_file_for_good()
+    {
+        string file = fx.File("p.bin", 10);
+        RemoveResult moved = remover.Remove(ItemFor(file));
+        Assert.Equal(RemoveStatus.Removed, remover.Purge(moved.StoredPath!).Status);
+        Assert.False(File.Exists(moved.StoredPath));
+        Assert.Equal(RemoveStatus.Gone, remover.Purge(moved.StoredPath!).Status);
+        Assert.False(remover.Restore(moved.StoredPath!, file).Restored);
+    }
+
+    [Fact]
+    public void Purge_refuses_files_outside_the_quarantine_directory()
+    {
+        string file = fx.File("outside.bin", 10);
+        Assert.Equal(RemoveStatus.Unsafe, remover.Purge(file).Status);
+        Assert.True(File.Exists(file));
+    }
+
+    [Fact]
+    public void Purge_removes_a_read_only_quarantined_file()
+    {
+        string file = fx.File("ro.bin", 10);
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+        RemoveResult moved = remover.Remove(ItemFor(file));
+        Assert.Equal(RemoveStatus.Removed, remover.Purge(moved.StoredPath!).Status);
+        Assert.False(File.Exists(moved.StoredPath));
+    }
 }

@@ -46,7 +46,7 @@ public interface IConfirmation
 }
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
-    ExecutionStore executions, PlanExecutor executor, IFileRestorer restorer, IConfirmation confirmation, TimeProvider time) : ObservableObject
+    ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, IConfirmation confirmation, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -133,8 +133,8 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
         string message = $"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}) "
             + $"из категорий: {DisplayFormat.Count(planned.Count(p => p.Items.Count > 0))}.\n\n"
-            + "Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина». Занятые и изменённые после оценки файлы будут пропущены. "
-            + "Место на диске не освободится, пока карантин не очищен.\n\nПродолжить?";
+            + "Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. Занятые и изменённые после оценки файлы будут пропущены. "
+            + "Место на диске освободится после очистки карантина.\n\nПродолжить?";
         if (!confirmation.Confirm("Очистка", message)) { CleanupStatus = "Очистка отменена"; return; }
 
         IsBusy = true;
@@ -149,11 +149,11 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 + (report.Cancelled ? "; остановлено пользователем" : "")
                 + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "")
                 + ". Оценка устарела, выполните её заново.";
-            QuarantineStatus = "Есть файлы в карантине";
             Cleanup = [];
             plan = null;
             planned = [];
             CleanCommand.NotifyCanExecuteChanged();
+            await RefreshQuarantineAsync();
         }
         catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
         catch (Exception ex) { CleanupStatus = "Очистка не выполнена: " + ex.Message; }
@@ -166,31 +166,58 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         RemoveStatus.Unsafe => "отклонены защитой", _ => "ошибка",
     };
 
+    // Called when the window opens: files past their retention are deleted for good, then the quarantine is summarised.
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            PurgeReport expired = await Task.Run(() => quarantine.PurgeExpiredAsync());
+            await RefreshQuarantineAsync(expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : "");
+        }
+        catch (Exception ex) { QuarantineStatus = "Карантин недоступен: " + ex.Message; }
+    }
+
+    private async Task RefreshQuarantineAsync(string prefix = "")
+    {
+        IReadOnlyList<ExecutionStore.QuarantinedFile> held = await quarantine.HeldAsync();
+        QuarantineStatus = prefix + (held.Count == 0 ? "Карантин пуст"
+            : $"В карантине: {DisplayFormat.Count(held.Count)} файлов, логически {DisplayFormat.Size(held.Sum(f => f.Size))}; самый ранний срок хранения до {held.Min(f => f.ExpiresUtc).ToLocalTime():d}");
+    }
+
+    private static string Measured(PurgeReport r) => r.MeasuredFreeDelta is long d
+        ? $"Свободное место на томе изменилось на {(d < 0 ? "−" : "+")}{DisplayFormat.Size(Math.Abs(d))} (измерено до и после; логически удалено {DisplayFormat.Size(r.LogicalBytes)})."
+        : $"Логически удалено {DisplayFormat.Size(r.LogicalBytes)}; свободное место измерить не удалось.";
+
     [RelayCommand]
     private async Task RestoreAsync()
     {
         IsBusy = true;
         try
         {
-            IReadOnlyList<ExecutionStore.QuarantinedFile> held = await executions.HeldAsync();
-            if (held.Count == 0) { QuarantineStatus = "Карантин пуст"; return; }
-            int restored = 0, failed = 0;
-            await Task.Run(async () =>
-            {
-                foreach (ExecutionStore.QuarantinedFile file in held)
-                {
-                    if (restorer.Restore(file.StoredPath, file.OriginalPath).Restored)
-                    {
-                        await executions.MarkRestoredAsync(file.Id, time.GetUtcNow().UtcDateTime);
-                        restored++;
-                    }
-                    else failed++;
-                }
-            });
-            QuarantineStatus = $"Возвращено: {DisplayFormat.Count(restored)}"
-                + (failed > 0 ? $"; не удалось: {DisplayFormat.Count(failed)} (на месте уже есть файл или карантин недоступен)" : "");
+            RestoreReport report = await Task.Run(() => quarantine.RestoreAllAsync());
+            await RefreshQuarantineAsync($"Возвращено: {DisplayFormat.Count(report.Restored)}"
+                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)} (на месте уже есть файл или карантин недоступен)" : "") + ". ");
         }
         catch (Exception ex) { QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task PurgeAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            IReadOnlyList<ExecutionStore.QuarantinedFile> held = await quarantine.HeldAsync();
+            if (held.Count == 0) { QuarantineStatus = "Карантин пуст"; return; }
+            string message = $"Окончательно удалить из карантина файлов: {DisplayFormat.Count(held.Count)} (логически {DisplayFormat.Size(held.Sum(f => f.Size))})?\n\n"
+                + "Вернуть их после этого будет нельзя.";
+            if (!confirmation.Confirm("Очистка карантина", message)) { QuarantineStatus = "Очистка карантина отменена"; return; }
+            PurgeReport report = await Task.Run(() => quarantine.PurgeAllAsync());
+            await RefreshQuarantineAsync($"Удалено окончательно: {DisplayFormat.Count(report.Purged)}"
+                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)}" : "") + ". " + Measured(report) + " ");
+        }
+        catch (Exception ex) { QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
     }
 

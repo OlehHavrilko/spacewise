@@ -18,11 +18,12 @@ public sealed record FileRow(string Path, string Size, string OnDisk, string Not
 public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
 {
     public RulePreview Preview { get; } = preview;
-    public bool CanSelect { get; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0;
+    public bool CanSelect { get; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0
+        || preview.Rule.Action == SystemRules.RecycleBinAction && preview.SystemCount > 0;
     // FR-UI-004: nothing is preselected; the user picks categories.
     [ObservableProperty] public partial bool IsSelected { get; set; }
     public string Title => Preview.Rule.TitleRu;
-    public string Files => DisplayFormat.Count(Preview.Items.Count);
+    public string Files => DisplayFormat.Count(Preview.FileCount);
     public string Estimate => DisplayFormat.Size(Preview.LogicalBytes);
     public string SideEffects => Preview.Rule.SideEffectsRu;
     public string Explanation => RuleExplainer.Explain(Preview);
@@ -38,8 +39,9 @@ public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
         {
             RulePreview p = Preview;
             var notes = new List<string>();
-            if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
-            else if (p.Rule.Action != "delete") notes.Add("системный обработчик, пока только оценка");
+            if (p.Rule.Action == SystemRules.RecycleBinAction) notes.Add("удаляется окончательно, без карантина");
+            else if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
+            else if (p.Rule.Action != "delete" && p.Rule.Action != SystemRules.RecycleBinAction) notes.Add("системный обработчик, пока только оценка");
             if (p.Running.Count > 0) notes.Add("запущено, закройте: " + string.Join(", ", p.Running));
             if (p.LockedBy.Count > 0)
                 notes.Add("файлы заняты: " + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
@@ -81,7 +83,8 @@ public interface IConfirmation
 }
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
-    ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IConfirmation confirmation, TimeProvider time) : ObservableObject
+    ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IRecycleBin recycleBin, IVolumeSpace space,
+    IConfirmation confirmation, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -139,8 +142,14 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         CleanupStatus = "Оценка выполняется…";
         try
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            cleanup.Timings = (rule, files, ms) => AppLog.Info("Estimate rule {Rule}: {Files} files, {Milliseconds} ms", rule, files, ms);
             IReadOnlyList<RulePreview> previews = await Task.Run(() => cleanup.Preview(cancellation), cancellation);
-            RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0).OrderByDescending(p => p.LogicalBytes)];
+            AppLog.Info("Cleanup estimate took {Milliseconds} ms", clock.ElapsedMilliseconds);
+            RecycleBinInfo? binInfo = await Task.Run(recycleBin.Query, cancellation);
+            RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0)
+                .Concat(binInfo is { Items: > 0 } ? [SystemRules.RecycleBinPreview(binInfo.Items, binInfo.Bytes)] : [])
+                .OrderByDescending(p => p.LogicalBytes)];
             SetRows([.. found.Select(p => new CleanupRow(p))]);
             AppLog.Info("Cleanup estimate: {Categories} categories, {Files} files", found.Length, found.Sum(p => p.Items.Count));
             CleanupStatus = found.Length == 0
@@ -186,39 +195,72 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
 
     private bool CanClean() => Cleanup.Any(r => r.IsSelected && r.CanSelect);
 
-    // Quarantine is the default and only method: files are moved, not erased, and can be put back.
+    // Files go to quarantine (reversible); the Recycle Bin, if chosen, is emptied by Windows (permanent, said in the confirmation).
     [RelayCommand(CanExecute = nameof(CanClean), IncludeCancelCommand = true)]
     private async Task CleanAsync(CancellationToken cancellation)
     {
         RulePreview[] chosen = [.. Cleanup.Where(r => r.IsSelected && r.CanSelect).Select(r => r.Preview)];
+        RulePreview? bin = chosen.FirstOrDefault(p => p.Rule.Action == SystemRules.RecycleBinAction);
         CleanupPlan current = PlanBuilder.Build(chosen, time.GetUtcNow().UtcDateTime);
-        PolicyDecision decision = MutationPolicy.Evaluate(current, time.GetUtcNow().UtcDateTime);
-        if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
-        string message = $"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}) "
-            + $"из категорий: {DisplayFormat.Count(chosen.Length)}.\n\n"
-            + "Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. Занятые и изменённые после оценки файлы будут пропущены. "
-            + "Место на диске освободится после очистки карантина.\n\nПродолжить?";
-        if (!confirmation.Confirm("Очистка", message)) { CleanupStatus = "Очистка отменена"; return; }
+        bool hasFiles = current.Items.Count > 0;
+        if (hasFiles)
+        {
+            PolicyDecision decision = MutationPolicy.Evaluate(current, time.GetUtcNow().UtcDateTime);
+            if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
+        }
+        else if (bin is null) { CleanupStatus = "Очистка отклонена: в выбранных категориях нет файлов."; return; }
+
+        var message = new System.Text.StringBuilder();
+        if (hasFiles)
+            message.Append($"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}). ")
+                .Append("Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. ")
+                .Append("Занятые и изменённые после оценки файлы будут пропущены. Место на диске освободится после очистки карантина.\n\n");
+        if (bin is not null)
+            message.Append($"Корзина будет очищена окончательно: объектов {DisplayFormat.Count(bin.SystemCount)} (около {DisplayFormat.Size(bin.SystemBytes)}). ")
+                .Append("Вернуть их будет нельзя, карантин для Корзины не применяется.\n\n");
+        message.Append("Продолжить?");
+        if (!confirmation.Confirm("Очистка", message.ToString())) { CleanupStatus = "Очистка отменена"; return; }
 
         IsBusy = true;
         CleanupStatus = "Очистка выполняется…";
         try
         {
-            long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
-            ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
-            await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
-            AppLog.Info("Cleanup finished: plan {PlanId}, quarantined {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
-            var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
-            CleanupStatus = $"Перемещено в карантин: {DisplayFormat.Count(report.Removed)} файлов (оценка по логическим размерам: {DisplayFormat.Size(report.BytesRemoved)}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина"
-                + (report.Cancelled ? "; остановлено пользователем" : "")
-                + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "")
-                + ". Оценка устарела, выполните её заново.";
+            var lines = new List<string>();
+            if (hasFiles)
+            {
+                long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
+                ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
+                await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
+                AppLog.Info("Cleanup finished: plan {PlanId}, quarantined {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
+                var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
+                lines.Add($"Перемещено в карантин: {DisplayFormat.Count(report.Removed)} файлов (оценка по логическим размерам: {DisplayFormat.Size(report.BytesRemoved)}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина"
+                    + (report.Cancelled ? "; остановлено пользователем" : "")
+                    + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "") + ".");
+            }
+            if (bin is not null && !cancellation.IsCancellationRequested) lines.Add(await EmptyRecycleBinAsync(bin));
+            CleanupStatus = string.Join("\n", lines) + "\nОценка устарела, выполните её заново.";
             SetRows([]);
             await RefreshQuarantineAsync();
+            await RefreshHistoryAsync();
         }
         catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
         catch (Exception ex) { AppLog.Failure("Cleanup", ex); CleanupStatus = "Очистка не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
+    }
+
+    // FR-CLN-001..003: free space of every fixed volume is read before and after, and the shell's own count is the estimate.
+    private async Task<string> EmptyRecycleBinAsync(RulePreview bin)
+    {
+        string[] volumes = [.. System.IO.DriveInfo.GetDrives().Where(d => d.DriveType == System.IO.DriveType.Fixed && d.IsReady).Select(d => d.Name)];
+        long? Free() => volumes.Select(space.FreeBytes).Aggregate((long?)0, (sum, v) => sum is null || v is null ? null : sum + v);
+        long? before = Free();
+        bool ok = await Task.Run(recycleBin.Empty);
+        long? after = Free();
+        long? delta = before is long b && after is long a ? a - b : null;
+        await executions.RecordSystemActionAsync(bin.Rule.Id, bin.SystemBytes, ok ? "Done" : "Failed", time.GetUtcNow().UtcDateTime);
+        AppLog.Info("Recycle Bin emptied: ok {Ok}, items {Items}, measured delta {Delta}", ok, bin.SystemCount, delta);
+        return ok ? "Корзина очищена. " + Measured(new PurgeReport((int)bin.SystemCount, 0, bin.SystemBytes, delta))
+            : "Корзину очистить не удалось: Windows отказала.";
     }
 
     private static string Skipped(RemoveStatus status) => status switch
@@ -301,7 +343,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial string HistoryStatus { get; set; } = "";
     [ObservableProperty] public partial bool ShowWelcome { get; set; }
 
-    private static string ActionText(string action, string result) => action switch
+    private static string ActionText(string action, string path) => path.StartsWith("shell:", StringComparison.Ordinal) ? "Очистка Корзины (окончательно)" : action switch
     {
         "restore" => "Возврат из карантина",
         "purge" => "Окончательное удаление из карантина",
@@ -320,7 +362,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         try
         {
             var rows = await executions.RecentDecisionsAsync(500);
-            History = [.. rows.Select(r => new HistoryRow(r.TimeUtc.ToLocalTime().ToString("g"), ActionText(r.Action, r.Result), ResultText(r.Result),
+            History = [.. rows.Select(r => new HistoryRow(r.TimeUtc.ToLocalTime().ToString("g"), ActionText(r.Action, r.Path), ResultText(r.Result),
                 r.Category, DisplayFormat.Size(r.Bytes), r.Path))];
             HistoryStatus = rows.Count == 0 ? "Журнал пока пуст" : $"Последние записи: {DisplayFormat.Count(rows.Count)}";
         }

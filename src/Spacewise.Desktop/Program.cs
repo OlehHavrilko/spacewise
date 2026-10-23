@@ -34,6 +34,7 @@ public static class Program
         builder.Services.AddSingleton<IFileRestorer>(sp => sp.GetRequiredService<QuarantineFileRemover>());
         builder.Services.AddSingleton<IQuarantinePurger>(sp => sp.GetRequiredService<QuarantineFileRemover>());
         builder.Services.AddSingleton<IVolumeSpace, DriveVolumeSpace>();
+        builder.Services.AddSingleton<IRecycleBin, ShellRecycleBin>();
         builder.Services.AddSingleton<QuarantineService>();
         builder.Services.AddSingleton(sp => new ExecutionRecovery(sp.GetRequiredService<ExecutionStore>(), sp.GetRequiredService<PlanStore>(),
             System.IO.Path.Combine(sp.GetRequiredService<UserFolders>().Spacewise, "Quarantine"), TimeProvider.System));

@@ -49,11 +49,19 @@ public static class ScanPaths
             StringComparison.OrdinalIgnoreCase));
 }
 
-// Deliberately no execution interface, shell command, or Delete operation in this starter.
 public sealed record PolicyDecision(bool Allowed, string Reason);
-public static class ReadOnlyPolicy
+
+// Plan-level gate in front of the executor: a plan is runnable only if it is non-empty, unmodified and unexpired.
+// Per-item rules (protected paths, known action) are enforced again by PlanExecutor and by handle in the remover.
+public static class MutationPolicy
 {
-    public static PolicyDecision EvaluateMutation() => new(false, "Каркас поддерживает только анализ.");
+    public static PolicyDecision Evaluate(CleanupPlan plan, DateTime nowUtc)
+    {
+        if (plan.Items.Count == 0) return new(false, "В плане нет файлов.");
+        if (!plan.DigestMatches()) return new(false, "План изменён: digest не совпал.");
+        if (nowUtc >= plan.ExpiresUtc) return new(false, "План устарел, постройте его заново.");
+        return new(true, "");
+    }
 }
 
 public sealed class DisabledLocalAssistant

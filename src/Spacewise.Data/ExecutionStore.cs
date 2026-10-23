@@ -68,4 +68,30 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             transaction.Commit();
             return 0;
         }, cancellation);
+
+    public sealed record QuarantinedFile(long Id, string OriginalPath, string StoredPath, long Size);
+
+    // Everything still held in quarantine: not restored, not purged. Works across sessions.
+    public Task<IReadOnlyList<QuarantinedFile>> HeldAsync(CancellationToken cancellation = default) =>
+        journal.ExecuteAsync<IReadOnlyList<QuarantinedFile>>(connection =>
+        {
+            using SqliteCommand query = connection.CreateCommand();
+            query.CommandText = "SELECT id, original_path_enc, stored_path_enc, size FROM quarantine WHERE restored_utc IS NULL AND purged_utc IS NULL ORDER BY id";
+            using SqliteDataReader r = query.ExecuteReader();
+            var list = new List<QuarantinedFile>();
+            while (r.Read())
+                list.Add(new(r.GetInt64(0), System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(1)),
+                    System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(2)), r.GetInt64(3)));
+            return list;
+        }, cancellation);
+
+    public Task MarkRestoredAsync(long quarantineId, DateTime restoredUtc, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(connection =>
+        {
+            using SqliteCommand update = connection.CreateCommand();
+            update.CommandText = "UPDATE quarantine SET restored_utc = $at WHERE id = $id";
+            update.Parameters.AddWithValue("$at", restoredUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            update.Parameters.AddWithValue("$id", quarantineId);
+            return update.ExecuteNonQuery();
+        }, cancellation);
 }

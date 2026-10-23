@@ -4,11 +4,9 @@ using Spacewise.Core;
 
 namespace Spacewise.Platform.Windows;
 
-public sealed record RestoreResult(bool Restored, int Code = 0);
-
 // Reversible removal: the verified file is renamed into the quarantine directory through the same handle
 // (NtSetInformationFile, ADR 0002 step 4). Same volume only; across volumes the rename fails and nothing is deleted.
-public sealed unsafe partial class QuarantineFileRemover(string quarantineDirectory) : HandleFileRemover
+public sealed unsafe partial class QuarantineFileRemover(string quarantineDirectory) : HandleFileRemover, IFileRestorer
 {
     private const uint AddFile = 0x2;
     private const uint RenamePosix = 0x2;

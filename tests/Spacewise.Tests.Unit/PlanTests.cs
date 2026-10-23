@@ -125,6 +125,25 @@ public sealed class PlanTests : IDisposable
         Assert.Equal(["done:", "skipped:Locked", "pending:", "cancelled", "2:5", "1:5:2026-11-22T12:00:00.0000000Z"], rows);
     }
 
+    [Fact]
+    public async Task Held_quarantine_lists_unrestored_files_and_drops_restored()
+    {
+        var keys = new TestKeys();
+        await using var writer = new DatabaseWriter(SqliteDatabase.Open(Path.Combine(dir, "journal.db"), Schemas.Journal, keys).Connection);
+        var store = new PlanStore(writer);
+        var exec = new ExecutionStore(writer);
+        CleanupPlan plan = Plan(Item(@"C:\Temp\a", 5), Item(@"C:\Temp\b", 7));
+        long id = await store.SaveAsync(plan, cancellation: TestContext.Current.CancellationToken);
+        await exec.RecordAsync(id, new ExecutionReport([new(plan.Items[0], RemoveStatus.Removed, 0, @"C:\Q\1"), new(plan.Items[1], RemoveStatus.Removed, 0, @"C:\Q\2")], false),
+            Now, cancellation: TestContext.Current.CancellationToken);
+
+        var held = await exec.HeldAsync(TestContext.Current.CancellationToken);
+        Assert.Equal([(@"C:\Temp\a", @"C:\Q\1", 5L), (@"C:\Temp\b", @"C:\Q\2", 7L)], held.Select(h => (h.OriginalPath, h.StoredPath, h.Size)));
+
+        await exec.MarkRestoredAsync(held[0].Id, Now, TestContext.Current.CancellationToken);
+        Assert.Equal([@"C:\Temp\b"], (await exec.HeldAsync(TestContext.Current.CancellationToken)).Select(h => h.OriginalPath));
+    }
+
     private sealed class TestKeys : IDatabaseKeySource
     {
         public byte[] GetKey(string database) => Enumerable.Repeat((byte)7, 32).ToArray();

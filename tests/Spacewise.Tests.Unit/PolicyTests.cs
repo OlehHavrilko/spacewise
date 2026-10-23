@@ -41,9 +41,18 @@ public class PolicyTests
         Assert.Equal(@"C:\Data", ScanPaths.Normalize("  \"C:\\Data\\\"  "));
 
     [Fact]
-    public void Mutations_are_denied_and_model_is_disabled()
+    public void Model_is_disabled() => Assert.False(new DisabledLocalAssistant().IsAvailable);
+
+    [Fact]
+    public void Mutation_policy_allows_only_a_non_empty_intact_fresh_plan()
     {
-        Assert.False(ReadOnlyPolicy.EvaluateMutation().Allowed);
-        Assert.False(new DisabledLocalAssistant().IsAvailable);
+        var now = new DateTime(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
+        var item = new PlanItem("r", 1, "delete", @"C:\Users\u\AppData\Local\Temp\a", 1, now);
+        CleanupPlan plan = CleanupPlan.Create([item], now, TimeSpan.FromHours(1), "user");
+
+        Assert.True(MutationPolicy.Evaluate(plan, now.AddMinutes(1)).Allowed);
+        Assert.False(MutationPolicy.Evaluate(CleanupPlan.Create([], now, TimeSpan.FromHours(1), "user"), now).Allowed);
+        Assert.False(MutationPolicy.Evaluate(plan, now.AddHours(1)).Allowed);
+        Assert.False(MutationPolicy.Evaluate(plan with { Items = [item with { ExpectedSize = 2 }] }, now).Allowed);
     }
 }

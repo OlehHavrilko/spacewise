@@ -1,0 +1,36 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- FR-DEL-001: per-machine MSI, self-contained app. No service, no driver, no Run key, no scheduled task, no autostart.
+       User data (%LOCALAPPDATA%\Spacewise: journal, cache, quarantine) is never touched by install, upgrade or uninstall:
+       the quarantine holds the user's own files. -->
+  <Package Name="Spacewise" Manufacturer="Spacewise" Version="$(var.Version)" UpgradeCode="6f3b2c1e-8a44-4d7e-9c52-1b7a0e5d2f90"
+           Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Spacewise is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Spacewise" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="MainExecutable" Directory="INSTALLFOLDER">
+      <Component Guid="2d0f9a64-5b1c-4f38-a7e9-3c8d6b104e57">
+        <File Id="SpacewiseExe" Source="$(var.PublishDir)\Spacewise.Desktop.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Spacewise" WorkingDirectory="INSTALLFOLDER" Advertise="no" />
+        </File>
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Harvested" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**">
+        <Exclude Files="$(var.PublishDir)\Spacewise.Desktop.exe" />
+        <Exclude Files="$(var.PublishDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Feature Id="Main" Title="Spacewise" Level="1">
+      <ComponentGroupRef Id="MainExecutable" />
+      <ComponentGroupRef Id="Harvested" />
+    </Feature>
+  </Package>
+</Wix>

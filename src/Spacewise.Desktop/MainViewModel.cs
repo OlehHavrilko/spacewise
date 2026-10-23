@@ -183,7 +183,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
             await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
             var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
-            CleanupStatus = $"В карантине: {DisplayFormat.Count(report.Removed)} файлов (логически {DisplayFormat.Size(report.BytesRemoved)})"
+            CleanupStatus = $"Перемещено в карантин: {DisplayFormat.Count(report.Removed)} файлов (оценка по логическим размерам: {DisplayFormat.Size(report.BytesRemoved)}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина"
                 + (report.Cancelled ? "; остановлено пользователем" : "")
                 + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "")
                 + ". Оценка устарела, выполните её заново.";
@@ -223,9 +223,13 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             : $"В карантине: {DisplayFormat.Count(held.Count)} файлов, логически {DisplayFormat.Size(held.Sum(f => f.Size))}; самый ранний срок хранения до {held.Min(f => f.ExpiresUtc).ToLocalTime():d}");
     }
 
-    private static string Measured(PurgeReport r) => r.MeasuredFreeDelta is long d
-        ? $"Свободное место на томе изменилось на {(d < 0 ? "−" : "+")}{DisplayFormat.Size(Math.Abs(d))} (измерено до и после; логически удалено {DisplayFormat.Size(r.LogicalBytes)})."
-        : $"Логически удалено {DisplayFormat.Size(r.LogicalBytes)}; свободное место измерить не удалось.";
+    // FR-CLN-001..003: "Измерено" and "Оценка" stay separate; a gap over 10 % is explained.
+    private static string Measured(PurgeReport r)
+    {
+        if (r.MeasuredFreeDelta is not long d) return $"Оценка (логический размер): {DisplayFormat.Size(r.LogicalBytes)}. Освобождённое место измерить не удалось.";
+        string text = $"Освобождено на диске (измерено): {(d < 0 ? "−" : "")}{DisplayFormat.Size(Math.Abs(d))}. Оценка (логический размер): {DisplayFormat.Size(r.LogicalBytes)}.";
+        return FreedSpace.WhyDifferent(r.LogicalBytes, d) is { } why ? text + "\nПочему цифры отличаются: " + why : text;
+    }
 
     [RelayCommand]
     private async Task RestoreAsync()

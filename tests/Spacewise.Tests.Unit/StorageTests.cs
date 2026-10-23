@@ -139,6 +139,28 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(8L, await writer.ExecuteAsync(c => Scalar(c, "SELECT count(*) FROM paths"), Ct));
     }
 
+    [Fact]
+    public async Task Trim_keeps_the_newest_scans_and_removes_unreferenced_path_nodes()
+    {
+        await using var writer = new DatabaseWriter(SqliteDatabase.Open(Db(), Schemas.Cache, keys).Connection);
+        var store = new ScanStore(writer);
+        var done = new DateTime(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
+        for (int i = 0; i < 8; i++)
+            await store.SaveAsync(new ScanResult(Guid.NewGuid(), $@"C:\Root{i}", ScanState.Completed, 1, 10, 0, 0,
+                [new FileFinding($@"C:\Root{i}\deep\er\file{i}.bin", 10)], []), done.AddMinutes(i), Ct);
+        long Count(string table) => writer.ExecuteAsync(c => { using var cmd = c.CreateCommand(); cmd.CommandText = $"SELECT count(*) FROM {table}"; return (long)cmd.ExecuteScalar()!; }, Ct).Result;
+        long pathsBefore = Count("paths");
+
+        Assert.Equal(3, await store.TrimAsync(cancellation: Ct));
+
+        IReadOnlyList<StoredScan> left = await store.RecentAsync(10, Ct);
+        Assert.Equal(["C:\\Root7", "C:\\Root6", "C:\\Root5", "C:\\Root4", "C:\\Root3"], left.Select(s => s.Root));
+        Assert.Equal(5, Count("top_files"));
+        Assert.True(Count("paths") < pathsBefore);
+        Assert.Equal(@"C:\Root3\deep\er\file3.bin", (await store.TopFilesAsync(left[^1].Id, Ct)).Single().Path);
+        Assert.Equal(0, await store.TrimAsync(cancellation: Ct));
+    }
+
     [Theory]
     [InlineData(ScanState.Idle)]
     [InlineData(ScanState.Scanning)]

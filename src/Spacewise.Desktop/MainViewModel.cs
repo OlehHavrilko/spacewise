@@ -126,7 +126,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             Details = Coverage(result) + "\nЭто логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Модель отсутствует.\n"
                 + string.Join("\n", result.Diagnostics);
             // The cache is regenerable: a failed save is reported, not fatal.
-            try { await history.SaveAsync(result, DateTime.UtcNow, CancellationToken.None); }
+            try { await history.SaveAsync(result, DateTime.UtcNow, CancellationToken.None); await history.TrimAsync(); }
             catch (Exception ex) { Details += $"\nИстория сканов не сохранена: {ex.Message}"; }
         }
         catch (Exception ex)

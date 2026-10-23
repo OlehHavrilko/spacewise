@@ -41,6 +41,7 @@ public static class Program
         builder.Services.AddSingleton(sp => new PlanExecutor(sp.GetRequiredService<IFileRemover>(), sp.GetRequiredService<UserFolders>(), TimeProvider.System));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<IConfirmation, MessageBoxConfirmation>();
+        builder.Services.AddSingleton<IFileDialogs, SaveFileDialogService>();
         builder.Services.AddSingleton(_ => new CleanupPreviewer(CatalogLoader.LoadBuiltIn(), new FileSystemTree(),
             UserFolders.FromEnvironment(), TimeProvider.System, new ProcessList(), new RestartManager()));
         builder.Services.AddTransient<MainViewModel>();

@@ -84,7 +84,7 @@ public interface IConfirmation
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
     ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IRecycleBin recycleBin, IVolumeSpace space,
-    IConfirmation confirmation, TimeProvider time) : ObservableObject
+    IConfirmation confirmation, IFileDialogs dialogs, TimeProvider time) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -391,6 +391,47 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             AppLog.Info("Journal verification: broken row {Row}", broken);
         }
         catch (Exception ex) { AppLog.Failure("Journal verification", ex); HistoryStatus = "Проверка не выполнена: " + ex.Message; }
+    }
+
+    [ObservableProperty] public partial bool ExportIncludesPaths { get; set; }
+
+    // FR-DATA-003: a Markdown report of the journal; paths only when the box is ticked.
+    [RelayCommand]
+    private async Task ExportReportAsync()
+    {
+        string? file = dialogs.SaveFile("Сохранить отчёт", $"spacewise-report-{time.GetUtcNow():yyyyMMdd}.md", "Markdown (*.md)|*.md");
+        if (file is null) return;
+        try
+        {
+            var rows = await executions.RecentDecisionsAsync(5000);
+            long? broken = await Task.Run(() => executions.VerifyJournalAsync());
+            await System.IO.File.WriteAllTextAsync(file, ReportExport.BuildMarkdown(rows, ExportIncludesPaths, time.GetUtcNow().UtcDateTime, broken), new System.Text.UTF8Encoding(false));
+            HistoryStatus = $"Отчёт сохранён: записей {DisplayFormat.Count(rows.Count)}, пути {(ExportIncludesPaths ? "включены" : "скрыты")}.";
+            AppLog.Info("Report exported: {Rows} rows, paths {Paths}", rows.Count, ExportIncludesPaths);
+        }
+        catch (Exception ex) { AppLog.Failure("Report export", ex); HistoryStatus = "Отчёт не сохранён: " + ex.Message; }
+    }
+
+    // Logs and a few facts, no journal and no paths.
+    [RelayCommand]
+    private async Task ExportDiagnosticsAsync()
+    {
+        string? file = dialogs.SaveFile("Сохранить диагностический пакет", $"spacewise-diagnostics-{time.GetUtcNow():yyyyMMdd}.zip", "ZIP (*.zip)|*.zip");
+        if (file is null) return;
+        try
+        {
+            var facts = new Dictionary<string, string>
+            {
+                ["Версия"] = typeof(MainViewModel).Assembly.GetName().Version?.ToString() ?? "?",
+                ["Windows"] = Environment.OSVersion.VersionString,
+                [".NET"] = Environment.Version.ToString(),
+                ["Сформирован (UTC)"] = time.GetUtcNow().UtcDateTime.ToString("O"),
+            };
+            if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
+            await Task.Run(() => ReportExport.CreateDiagnosticPackage(file, AppLog.Directory, facts));
+            HistoryStatus = "Диагностический пакет сохранён: журналы работы и сведения о версии, без списка файлов.";
+        }
+        catch (Exception ex) { AppLog.Failure("Diagnostics export", ex); HistoryStatus = "Пакет не сохранён: " + ex.Message; }
     }
 
     [RelayCommand]

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Spacewise.Catalog;
 using Spacewise.Core;
 using Spacewise.Data;
 
@@ -12,7 +13,33 @@ public sealed record FileRow(string Path, string Size, string OnDisk, string Not
         f.IsHardLinked ? $"Жёсткая ссылка ({f.Links}): 0 байт выгоды" : "");
 }
 
-public sealed partial class MainViewModel(IScanService scanner, ScanStore history) : ObservableObject
+// One catalog rule in the cleanup estimate. Nothing here deletes: the executor is a later step.
+public sealed record CleanupRow(string Title, string Files, string Estimate, string Consequence, string Note, string SideEffects)
+{
+    public static CleanupRow From(RulePreview p)
+    {
+        var notes = new List<string>();
+        if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
+        if (p.Running.Count > 0) notes.Add("запущено, закройте: " + string.Join(", ", p.Running));
+        if (p.LockedBy.Count > 0)
+            notes.Add("файлы заняты: " + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
+                + (p.LockedBy.Count > 5 ? $" и ещё {p.LockedBy.Count - 5}" : "")
+                + (p.LockChecked < p.Items.Count ? $"; проверено {DisplayFormat.Count(p.LockChecked)} из {DisplayFormat.Count(p.Items.Count)}" : ""));
+        if (p.TooRecent > 0) notes.Add($"свежих пропущено: {DisplayFormat.Count(p.TooRecent)}");
+        if (p.Protected > 0) notes.Add($"защищённых пропущено: {DisplayFormat.Count(p.Protected)}");
+        if (p.Deferred > 0) notes.Add($"ссылок и облачных пропущено: {DisplayFormat.Count(p.Deferred)}");
+        string consequence = p.Rule.Consequence switch
+        {
+            Spacewise.Catalog.Consequence.Regenerated => "Создастся заново",
+            Spacewise.Catalog.Consequence.Redownloaded => "Скачается заново",
+            _ => "Удаляется безвозвратно",
+        };
+        return new(p.Rule.TitleRu, DisplayFormat.Count(p.Items.Count), DisplayFormat.Size(p.LogicalBytes), consequence,
+            string.Join("; ", notes), p.Rule.SideEffectsRu);
+    }
+}
+
+public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -21,6 +48,8 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial string Status { get; set; } = "Готов к проверке";
     [ObservableProperty] public partial string Details { get; set; } = Limitations;
     [ObservableProperty] public partial IReadOnlyList<FileRow> Files { get; set; } = [];
+    [ObservableProperty] public partial IReadOnlyList<CleanupRow> Cleanup { get; set; } = [];
+    [ObservableProperty] public partial string CleanupStatus { get; set; } = "Оценка не выполнялась";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
 
@@ -51,6 +80,28 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             Status = "Проверка не выполнена";
             Details = ex.Message;
         }
+        finally { IsBusy = false; }
+    }
+
+    // FR-CLN-002: the figure is an estimate of logical bytes, never presented as measured.
+    [RelayCommand(IncludeCancelCommand = true)]
+    private async Task PreviewCleanupAsync(CancellationToken cancellation)
+    {
+        Cleanup = [];
+        IsBusy = true;
+        CleanupStatus = "Оценка выполняется…";
+        try
+        {
+            IReadOnlyList<RulePreview> previews = await Task.Run(() => cleanup.Preview(cancellation), cancellation);
+            RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0).OrderByDescending(p => p.LogicalBytes)];
+            Cleanup = [.. found.Select(CleanupRow.From)];
+            CleanupStatus = found.Length == 0
+                ? "По правилам каталога ничего не найдено"
+                : $"Оценка: {DisplayFormat.Size(found.Sum(p => p.LogicalBytes))} в {DisplayFormat.Count(found.Length)} категориях. "
+                  + "Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Удаление пока недоступно.";
+        }
+        catch (OperationCanceledException) { CleanupStatus = "Оценка остановлена"; }
+        catch (Exception ex) { CleanupStatus = "Оценка не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
     }
 

@@ -35,6 +35,23 @@ public class ArchitectureTests
     public void Data_does_not_reference(string assembly) =>
         Assert.DoesNotContain(typeof(Spacewise.Data.SqliteDatabase).Assembly.GetReferencedAssemblies(), a => a.Name == assembly);
 
+    // The catalog is data plus matching: no storage, no Win32, no executor.
+    [Theory]
+    [InlineData("Spacewise.Platform.Windows")]
+    [InlineData("Spacewise.Data")]
+    [InlineData("Spacewise.Desktop")]
+    public void Catalog_does_not_reference(string assembly) =>
+        Assert.DoesNotContain(typeof(Spacewise.Catalog.CatalogLoader).Assembly.GetReferencedAssemblies(), a => a.Name == assembly);
+
+    [Fact]
+    public void Catalog_declares_no_platform_invoke_or_mutation()
+    {
+        Type[] types = typeof(Spacewise.Catalog.CatalogLoader).Assembly.GetTypes();
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        Assert.DoesNotContain(types.SelectMany(t => t.GetMethods(all)), m => (m.Attributes & MethodAttributes.PinvokeImpl) != 0);
+        Assert.DoesNotContain(types, t => t.Name.Contains("Executor") || t.Name.Contains("Delete"));
+    }
+
     [Fact]
     public void Core_has_no_mutation_capability() =>
         Assert.DoesNotContain(Core.GetTypes(), t => t.Name.Contains("Executor") || t.Name.Contains("Delete"));

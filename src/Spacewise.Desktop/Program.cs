@@ -44,6 +44,7 @@ public static class Program
             UserFolders.FromEnvironment(), TimeProvider.System, new ProcessList(), new RestartManager()));
         builder.Services.AddTransient<MainViewModel>();
         builder.Services.AddTransient<MainWindow>();
+        AppLog.Start();
         using IHost host = builder.Build();
 
         // Hosted services live only while the window does: no background process after close.
@@ -62,6 +63,10 @@ public static class Program
             }
             return app.Run(window);
         }
-        finally { host.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+        finally
+        {
+            host.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            AppLog.Stop();
+        }
     }
 }

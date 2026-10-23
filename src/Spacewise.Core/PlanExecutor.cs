@@ -22,12 +22,13 @@ public interface IVolumeSpace
     long? FreeBytes(string path);
 }
 
-public sealed record RestoreResult(bool Restored, int Code = 0);
+public sealed record RestoreResult(bool Restored, int Code = 0, bool HashMismatch = false);
 
 public interface IFileRestorer
 {
     // Puts a quarantined file back under its original name; never replaces an existing file.
-    RestoreResult Restore(string storedPath, string originalPath);
+    // With expectedSha256 the stored content is verified first and a mismatch leaves the file in quarantine.
+    RestoreResult Restore(string storedPath, string originalPath, byte[]? expectedSha256 = null);
 }
 
 public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0, string? StoredPath = null, byte[]? Sha256 = null);

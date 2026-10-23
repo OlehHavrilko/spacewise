@@ -5,7 +5,7 @@ namespace Spacewise.Data;
 
 public sealed record PurgeReport(int Purged, int Failed, long LogicalBytes, long? MeasuredFreeDelta);
 
-public sealed record RestoreReport(int Restored, int Failed);
+public sealed record RestoreReport(int Restored, int Failed, int HashMismatch = 0);
 
 // Quarantine lifecycle on top of the journal: restore, purge by expiry or on request, with measured free space.
 public sealed class QuarantineService(ExecutionStore store, IQuarantinePurger purger, IFileRestorer restorer, IVolumeSpace space, TimeProvider time)
@@ -64,16 +64,18 @@ public sealed class QuarantineService(ExecutionStore store, IQuarantinePurger pu
 
     public async Task<RestoreReport> RestoreAllAsync(CancellationToken cancellation = default)
     {
-        int restored = 0, failed = 0;
+        int restored = 0, failed = 0, mismatch = 0;
         foreach (ExecutionStore.QuarantinedFile file in await store.HeldAsync(cancellation))
         {
-            if (restorer.Restore(file.StoredPath, file.OriginalPath).Restored)
+            RestoreResult result = restorer.Restore(file.StoredPath, file.OriginalPath, file.Sha256);
+            if (result.Restored)
             {
                 await store.MarkRestoredAsync(file.Id, time.GetUtcNow().UtcDateTime, CancellationToken.None);
                 restored++;
             }
+            else if (result.HashMismatch) mismatch++;
             else failed++;
         }
-        return new(restored, failed);
+        return new(restored, failed, mismatch);
     }
 }

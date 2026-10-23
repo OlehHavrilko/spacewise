@@ -112,4 +112,24 @@ public sealed class QuarantineFileRemoverTests : IDisposable
         Assert.Equal(RemoveStatus.Removed, remover.Purge(moved.StoredPath!).Status);
         Assert.False(File.Exists(moved.StoredPath));
     }
+
+    [Fact]
+    public void Restore_with_matching_hash_succeeds_and_tampered_content_is_refused()
+    {
+        string good = fx.File("g.bin", 0);
+        File.WriteAllText(good, "original");
+        RemoveResult goodMove = remover.Remove(ItemFor(good));
+        Assert.True(remover.Restore(goodMove.StoredPath!, good, goodMove.Sha256).Restored);
+        Assert.Equal("original", File.ReadAllText(good));
+
+        string bad = fx.File("t.bin", 0);
+        File.WriteAllText(bad, "original");
+        RemoveResult badMove = remover.Remove(ItemFor(bad));
+        File.WriteAllText(badMove.StoredPath!, "tampered");
+        RestoreResult refused = remover.Restore(badMove.StoredPath!, bad, badMove.Sha256);
+        Assert.False(refused.Restored);
+        Assert.True(refused.HashMismatch);
+        Assert.False(File.Exists(bad));
+        Assert.True(File.Exists(badMove.StoredPath));
+    }
 }

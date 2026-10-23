@@ -7,7 +7,11 @@ public sealed record PreviewItem(string Path, long LogicalBytes, DateTime LastWr
 // Estimate only (FR-CLN-002): logical bytes of matched files, not what the volume will gain.
 public sealed record RulePreview(CleanupRule Rule, IReadOnlyList<PreviewItem> Items, long TooRecent, long Protected, long Deferred)
 {
-    public long LogicalBytes => Items.Sum(i => i.LogicalBytes);
+    // Objects the shell cleans itself (Recycle Bin): no file list, only a count and a size from the shell.
+    public long SystemCount { get; init; }
+    public long SystemBytes { get; init; }
+    public long LogicalBytes => Items.Sum(i => i.LogicalBytes) + SystemBytes;
+    public long FileCount => Items.Count + SystemCount;
     // Rule's runningProcess entries that are running now.
     public IReadOnlyList<string> Running { get; init; } = [];
     // FR-CLN-014: processes holding one of the first LockChecked items open.
@@ -22,6 +26,9 @@ public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, Use
     // Restart Manager cost grows with registered files; larger rules are sampled.
     public const int MaximumLockCheck = 2000;
 
+    // Diagnostics only: rule id, files selected, milliseconds spent on the rule.
+    public Action<string, int, long>? Timings { get; set; }
+
     public IReadOnlyList<RulePreview> Preview(CancellationToken cancellation, Func<CleanupRule, bool>? only = null)
     {
         DateTime now = time.GetUtcNow().UtcDateTime;
@@ -31,7 +38,10 @@ public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, Use
             cancellation.ThrowIfCancellationRequested();
             if (only is not null && !only(rule)) continue;
             if (!rule.Detect.AnyPath.Any(p => tree.Exists(Expand(p)))) continue;
-            results.Add(PreviewRule(rule, now, cancellation));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            RulePreview preview = PreviewRule(rule, now, cancellation);
+            Timings?.Invoke(rule.Id, preview.Items.Count, clock.ElapsedMilliseconds);
+            results.Add(preview);
         }
         return results;
     }

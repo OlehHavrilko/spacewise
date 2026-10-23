@@ -205,6 +205,16 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             return delete.ExecuteNonQuery();
         }, cancellation);
 
+    // Actions the shell performs itself (Recycle Bin): one decision row, no plan and no per-file rows.
+    public Task RecordSystemActionAsync(string ruleId, long bytes, string result, DateTime atUtc, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(connection =>
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            DecisionJournal.Append(connection, transaction, atUtc, new("user", "manual", ruleId + "@1", "shell:recycle-bin", bytes, ruleId, [ruleId], "approve", result, null));
+            transaction.Commit();
+            return 0;
+        }, cancellation);
+
     public sealed record DecisionRow(long Id, DateTime TimeUtc, string Action, string Result, string Category, long Bytes, string Path);
 
     // Newest first, for the "История" tab.

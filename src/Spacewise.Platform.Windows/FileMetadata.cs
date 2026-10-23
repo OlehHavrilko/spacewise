@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using Spacewise.Core;
 
-namespace Spacewise.Core;
+namespace Spacewise.Platform.Windows;
 
 public sealed record FileDetails(long AllocatedBytes, int Links, FileIdentity? Identity);
 

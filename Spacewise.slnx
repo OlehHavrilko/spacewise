@@ -1,1 +1,12 @@
-<Solution><Project Path="src/Spacewise.Core/Spacewise.Core.csproj" /><Project Path="src/Spacewise.Desktop/Spacewise.Desktop.csproj" /><Project Path="tests/Spacewise.SmokeTests/Spacewise.SmokeTests.csproj" /></Solution>
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Spacewise.Core/Spacewise.Core.csproj" />
+    <Project Path="src/Spacewise.Data/Spacewise.Data.csproj" />
+    <Project Path="src/Spacewise.Desktop/Spacewise.Desktop.csproj" />
+    <Project Path="src/Spacewise.Platform.Windows/Spacewise.Platform.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Spacewise.Tests.Fs/Spacewise.Tests.Fs.csproj" />
+    <Project Path="tests/Spacewise.Tests.Unit/Spacewise.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

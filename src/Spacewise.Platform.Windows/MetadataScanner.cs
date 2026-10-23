@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.IO.Enumeration;
+using Spacewise.Core;
 
-namespace Spacewise.Core;
+namespace Spacewise.Platform.Windows;
 
 public sealed class MetadataScanner : IScanner
 {

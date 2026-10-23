@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Spacewise.Core;
+using Spacewise.Data;
 
 namespace Spacewise.Desktop;
 
@@ -11,7 +12,7 @@ public sealed record FileRow(string Path, string Size, string OnDisk, string Not
         f.IsHardLinked ? $"Жёсткая ссылка ({f.Links}): 0 байт выгоды" : "");
 }
 
-public sealed partial class MainViewModel(IScanService scanner) : ObservableObject
+public sealed partial class MainViewModel(IScanService scanner, ScanStore history) : ObservableObject
 {
     public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
 
@@ -41,6 +42,9 @@ public sealed partial class MainViewModel(IScanService scanner) : ObservableObje
                 : $"{Display(result.State)} · файлов: {DisplayFormat.Count(result.Files)} · логически: {DisplayFormat.Size(result.LogicalBytes)}";
             Details = Coverage(result) + "\nЭто логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Очистка и модель отсутствуют.\n"
                 + string.Join("\n", result.Diagnostics);
+            // The cache is regenerable: a failed save is reported, not fatal.
+            try { await history.SaveAsync(result, DateTime.UtcNow, CancellationToken.None); }
+            catch (Exception ex) { Details += $"\nИстория сканов не сохранена: {ex.Message}"; }
         }
         catch (Exception ex)
         {

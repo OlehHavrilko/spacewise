@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ADR 0005: Core + SQLite3MC bundle; the Microsoft.Data.Sqlite meta package would add a second native e_sqlite3. -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" />
+    <PackageReference Include="SQLite3MC.PCLRaw.bundle" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Spacewise.Core/Spacewise.Core.csproj" />
+  </ItemGroup>
+</Project>

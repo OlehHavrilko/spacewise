@@ -60,6 +60,38 @@ public sealed class ScanStore(DatabaseWriter cache)
             return scanId;
         }, cancellation);
 
+    public const int ScansKept = 5;
+
+    // NFR-PERF-006: only the newest scans stay. Their rows cascade (top files, aggregates, findings); path nodes that nothing
+    // references and that have no children are removed leaf by leaf. Returns the number of scans removed.
+    public Task<int> TrimAsync(int keep = ScansKept, CancellationToken cancellation = default) =>
+        cache.ExecuteAsync(connection =>
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            int removed;
+            using (SqliteCommand delete = Command(connection, transaction,
+                "DELETE FROM scans WHERE id NOT IN (SELECT id FROM scans ORDER BY id DESC LIMIT $keep)"))
+            {
+                delete.Parameters.AddWithValue("$keep", keep);
+                removed = delete.ExecuteNonQuery();
+            }
+            if (removed > 0)
+                while (true)
+                {
+                    using SqliteCommand prune = Command(connection, transaction, """
+                        DELETE FROM paths WHERE
+                            NOT EXISTS (SELECT 1 FROM scans WHERE root_path_id = paths.id)
+                            AND NOT EXISTS (SELECT 1 FROM top_files WHERE path_id = paths.id)
+                            AND NOT EXISTS (SELECT 1 FROM folder_agg WHERE path_id = paths.id)
+                            AND NOT EXISTS (SELECT 1 FROM findings WHERE path_id = paths.id)
+                            AND NOT EXISTS (SELECT 1 FROM paths child WHERE child.parent_id = paths.id)
+                        """);
+                    if (prune.ExecuteNonQuery() == 0) break;
+                }
+            transaction.Commit();
+            return removed;
+        }, cancellation);
+
     public Task<IReadOnlyList<StoredScan>> RecentAsync(int count, CancellationToken cancellation = default) =>
         cache.ExecuteAsync<IReadOnlyList<StoredScan>>(connection =>
         {

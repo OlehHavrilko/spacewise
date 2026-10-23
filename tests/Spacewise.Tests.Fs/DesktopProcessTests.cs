@@ -4,6 +4,7 @@ namespace Spacewise.Tests.Fs;
 
 // NFR-PERF-010 / A3: closing the window leaves no Spacewise process after 5 s. NFR-PERF-011: no service or autostart entry.
 // FR-DATA-004: the log is written and holds no file paths at Information level.
+[Collection("Desktop app")]
 public sealed class DesktopProcessTests
 {
     private static string? DesktopExe()
@@ -25,6 +26,7 @@ public sealed class DesktopProcessTests
         string logs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spacewise", "logs");
         DateTime startedAt = DateTime.UtcNow;
 
+        var stopwatch = Stopwatch.StartNew();
         using Process app = Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false })!;
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (app.MainWindowHandle == IntPtr.Zero && !app.HasExited && DateTime.UtcNow < deadline)
@@ -33,6 +35,8 @@ public sealed class DesktopProcessTests
             app.Refresh();
         }
         Assert.NotEqual(IntPtr.Zero, app.MainWindowHandle);
+        // A12 / NFR-PERF-001 (warm start here; the cold-start figure is measured on a clean VM): first window in 3 s.
+        Assert.True(stopwatch.ElapsedMilliseconds <= 3000, $"first window took {stopwatch.ElapsedMilliseconds} ms");
 
         Assert.True(app.CloseMainWindow());
         bool exited = app.WaitForExit(5000);

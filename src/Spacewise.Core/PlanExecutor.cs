@@ -2,7 +2,7 @@ namespace Spacewise.Core;
 
 public enum RemoveStatus { Removed, Gone, Changed, Locked, Unsafe, Failed }
 
-public sealed record RemoveResult(RemoveStatus Status, int Code = 0);
+public sealed record RemoveResult(RemoveStatus Status, int Code = 0, string? StoredPath = null);
 
 // Platform side of deletion: must act on an object opened relative to a verified parent (spec §7.4), never on a bare path.
 public interface IFileRemover
@@ -10,7 +10,7 @@ public interface IFileRemover
     RemoveResult Remove(PlanItem item);
 }
 
-public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0);
+public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0, string? StoredPath = null);
 
 public sealed record ExecutionReport(IReadOnlyList<ItemOutcome> Outcomes, bool Cancelled)
 {
@@ -44,7 +44,7 @@ public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, Time
             {
                 result = new(RemoveStatus.Failed, e.HResult);
             }
-            outcomes.Add(new(item, result.Status, result.Code));
+            outcomes.Add(new(item, result.Status, result.Code, result.StoredPath));
         }
         return new(outcomes, Cancelled: false);
     }

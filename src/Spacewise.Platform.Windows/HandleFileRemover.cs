@@ -6,12 +6,12 @@ namespace Spacewise.Platform.Windows;
 
 // ADR 0002: open the parent, check it is the directory the plan names, open the child relative to that handle
 // (NtCreateFile, no path re-resolution), compare with the plan, delete through the same handle with POSIX semantics.
-public sealed unsafe partial class HandleFileRemover : IFileRemover
+public unsafe partial class HandleFileRemover : IFileRemover
 {
-    private const uint Delete = 0x00010000, Synchronize = 0x00100000, ListDirectory = 0x1, ReadAttributes = 0x80;
-    private const uint ShareAll = 0x7, OpenExisting = 3, BackupSemantics = 0x02000000, OpenReparse = 0x00200000;
+    protected const uint Delete = 0x00010000, Synchronize = 0x00100000, ListDirectory = 0x1, ReadAttributes = 0x80;
+    protected const uint ShareAll = 0x7, OpenExisting = 3, BackupSemantics = 0x02000000, OpenReparse = 0x00200000;
     private const uint FileOpen = 1, SynchronousIo = 0x20, NonDirectory = 0x40, CaseInsensitive = 0x40;
-    private const int BasicInfo = 0, StandardInfo = 1, DispositionInfoEx = 21;
+    protected const int BasicInfo = 0, StandardInfo = 1, DispositionInfoEx = 21;
     private const uint DeleteFlag = 0x1, PosixFlag = 0x2, IgnoreReadOnlyFlag = 0x10;
     private const uint AttrReparse = 0x400, AttrDirectory = 0x10;
     private const int StatusObjectNameNotFound = unchecked((int)0xC0000034), StatusObjectPathNotFound = unchecked((int)0xC000003A),
@@ -24,10 +24,10 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
     private struct ObjectAttributes { public uint Length; public nint Root; public UnicodeString* Name; public uint Attributes; public nint Sd, Qos; }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct IoStatus { public nint Status, Information; }
+    protected struct IoStatus { public nint Status, Information; }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct BasicInformation { public long Creation, LastAccess, LastWrite, Change; public uint Attributes; }
+    protected struct BasicInformation { public long Creation, LastAccess, LastWrite, Change; public uint Attributes; }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct StandardInformation { public long Allocation, EndOfFile; public uint Links; public byte DeletePending, Directory; }
@@ -37,7 +37,7 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, void* buffer, uint size);
+    protected static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, void* buffer, uint size);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -51,7 +51,7 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
         uint fileAttributes, uint share, uint disposition, uint options, void* ea, uint eaLength);
 
     [LibraryImport("ntdll.dll")]
-    private static partial uint RtlNtStatusToDosError(int status);
+    protected static partial uint RtlNtStatusToDosError(int status);
 
     public RemoveResult Remove(PlanItem item)
     {
@@ -87,11 +87,11 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
                     : status == StatusSharingViolation ? RemoveStatus.Locked : RemoveStatus.Failed, code);
             }
             using var child = new SafeFileHandle(raw, ownsHandle: true);
-            return RemoveOpened(child, item);
+            return Process(child, item);
         }
     }
 
-    private static RemoveResult RemoveOpened(SafeFileHandle child, PlanItem item)
+    private RemoveResult Process(SafeFileHandle child, PlanItem item)
     {
         BasicInformation basic;
         StandardInformation standard;
@@ -101,7 +101,12 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
         if ((basic.Attributes & (AttrReparse | AttrDirectory)) != 0) return new(RemoveStatus.Unsafe);
         if (standard.EndOfFile != item.ExpectedSize || DateTime.FromFileTimeUtc(basic.LastWrite) != item.ExpectedMtimeUtc)
             return new(RemoveStatus.Changed);
+        return Act(child, item);
+    }
 
+    // The child is verified against the plan; subclasses decide what happens to it.
+    protected virtual RemoveResult Act(SafeFileHandle child, PlanItem item)
+    {
         // IGNORE_READONLY: without it a read-only file is ACCESS_DENIED (ADR 0002, step 3).
         uint* info = stackalloc uint[1];
         *info = DeleteFlag | PosixFlag | IgnoreReadOnlyFlag;
@@ -110,7 +115,7 @@ public sealed unsafe partial class HandleFileRemover : IFileRemover
         return new(error is 32 or 33 ? RemoveStatus.Locked : RemoveStatus.Failed, error);
     }
 
-    private static bool IsExpectedDirectory(SafeFileHandle handle, string expected)
+    protected static bool IsExpectedDirectory(SafeFileHandle handle, string expected)
     {
         BasicInformation basic;
         if (!GetFileInformationByHandleEx(handle, BasicInfo, &basic, (uint)sizeof(BasicInformation))) return false;

@@ -102,9 +102,9 @@ public sealed class PlanTests : IDisposable
         CleanupPlan plan = Plan(Item(@"C:\Temp", 5), Item(@"C:\Temp", 7), Item(@"C:\Temp\c", 9));
         long id = await store.SaveAsync(plan, cancellation: TestContext.Current.CancellationToken);
         var report = new ExecutionReport(
-            [new(plan.Items[0], RemoveStatus.Removed), new(plan.Items[1], RemoveStatus.Locked, 32)], Cancelled: true);
+            [new(plan.Items[0], RemoveStatus.Removed, 0, @"C:\Q\abc"), new(plan.Items[1], RemoveStatus.Locked, 32)], Cancelled: true);
 
-        await new ExecutionStore(writer).RecordAsync(id, report, Now, TestContext.Current.CancellationToken);
+        await new ExecutionStore(writer).RecordAsync(id, report, Now, cancellation: TestContext.Current.CancellationToken);
 
         string[] rows = await writer.ExecuteAsync(c =>
         {
@@ -118,9 +118,11 @@ public sealed class PlanTests : IDisposable
             list.Add((string)cmd.ExecuteScalar()!);
             cmd.CommandText = "SELECT count(*) || ':' || sum(native_reported) FROM actions";
             list.Add((string)cmd.ExecuteScalar()!);
+            cmd.CommandText = "SELECT count(*) || ':' || size || ':' || expires_utc FROM quarantine";
+            list.Add((string)cmd.ExecuteScalar()!);
             return list.ToArray();
         }, TestContext.Current.CancellationToken);
-        Assert.Equal(["done:", "skipped:Locked", "pending:", "cancelled", "2:5"], rows);
+        Assert.Equal(["done:", "skipped:Locked", "pending:", "cancelled", "2:5", "1:5:2026-11-22T12:00:00.0000000Z"], rows);
     }
 
     private sealed class TestKeys : IDatabaseKeySource

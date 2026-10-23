@@ -84,4 +84,16 @@ public class CatalogTests
     [Fact]
     public void Oversized_catalog_is_rejected() =>
         Assert.Throws<CatalogException>(() => CatalogLoader.Load(new MemoryStream(new byte[CatalogLoader.MaximumBytes + 1])));
+
+    [Fact]
+    public void Every_builtin_rule_has_a_template_explanation_built_from_its_own_facts()
+    {
+        foreach (CleanupRule rule in CatalogLoader.LoadBuiltIn().Rules)
+        {
+            string text = RuleExplainer.Explain(new RulePreview(rule, [new PreviewItem(@"C:\x", 1024, DateTime.UtcNow)], 0, 0, 0));
+            Assert.Contains(rule.TitleRu, text);
+            Assert.Contains(rule.SideEffectsRu, text);
+            Assert.Contains($"правило {rule.Id}, версия {rule.RuleVersion}", text);
+        }
+    }
 }

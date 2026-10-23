@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Spacewise.Catalog;
 using Spacewise.Core;
 using Spacewise.Data;
+using Spacewise.Platform.Windows;
 
 namespace Spacewise.Desktop;
 
@@ -50,6 +51,27 @@ public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
             return string.Join("; ", notes);
         }
     }
+}
+
+// One program on the "Использование" tab. Size starts as the registry's estimate and is replaced by a measured one.
+public sealed partial class UsageRow(ProgramUsage usage, DateTime now) : ObservableObject
+{
+    public ProgramUsage Usage { get; } = usage;
+    public string Name => Usage.Program.Name;
+    public string Publisher => Usage.Program.Publisher ?? "";
+    public string Kind => Usage.Program.Kind == ProgramKind.Steam ? "Игра Steam" : "Программа";
+    public string Status { get; } = usage.Describe(now);
+    public string Evidence { get; } = usage.Evidence switch
+    {
+        EvidenceLevel.Heuristic => "Эвристика: только запуски через оболочку",
+        EvidenceLevel.Corroborated => "Подтверждено несколькими источниками",
+        EvidenceLevel.DirectEvidence => "Прямое свидетельство",
+        _ => "Нет данных",
+    };
+    public bool IsUnused => Usage.Status == ObservationStatus.NoActivityObservedWithinCoveredWindow;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SizeText))] public partial long? SizeBytes { get; set; } = usage.Program.SizeBytes;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SizeText))] public partial bool Measured { get; set; }
+    public string SizeText => SizeBytes is long b ? (Measured ? "" : "≈ ") + DisplayFormat.Size(b) : "—";
 }
 
 // Asks the user before anything is moved; a view concern, so the view model sees only this seam.
@@ -263,6 +285,69 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         }
         catch (Exception ex) { QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
+    }
+
+    [ObservableProperty] public partial IReadOnlyList<UsageRow> UsageRows { get; set; } = [];
+    [ObservableProperty] public partial string UsageStatus { get; set; } = "Нажмите «Прочитать использование»: данные берутся из журнала запусков Windows текущего пользователя.";
+    [ObservableProperty] public partial string UsageSummary { get; set; } = "";
+    private CancellationTokenSource? sizing;
+
+    // FR-USE-001/002/005. Reads only the current user's UserAssist (FR-USE-008); nothing is stored.
+    [RelayCommand]
+    private async Task LoadUsageAsync()
+    {
+        sizing?.Cancel();
+        UsageStatus = "Чтение списка программ и журнала запусков…";
+        try
+        {
+            DateTime now = time.GetUtcNow().UtcDateTime;
+            (IReadOnlyList<ProgramUsage> usages, bool readable) = await Task.Run(() =>
+            {
+                IReadOnlyList<InstalledProgram> programs = ProgramInventory.Read();
+                IReadOnlyList<UsageObservation>? observations = UserAssistReader.Read();
+                return (UsageAnalyzer.Analyze(programs, observations, now), observations is not null);
+            });
+            UsageRow[] rows = [.. usages.Select(u => new UsageRow(u, now))
+                .OrderByDescending(r => r.IsUnused).ThenByDescending(r => r.SizeBytes ?? 0).ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)];
+            UsageRows = rows;
+            UpdateUsageSummary();
+            UsageStatus = readable
+                ? $"Программ: {DisplayFormat.Count(rows.Length)}. Источник: UserAssist (запуски через Пуск и Проводник); запуски другими способами он не видит."
+                : $"Программ: {DisplayFormat.Count(rows.Length)}. Журнал запусков прочитать не удалось: история неизвестна, а не «не используется».";
+            sizing = new CancellationTokenSource();
+            _ = MeasureSizesAsync(rows, sizing.Token);
+        }
+        catch (Exception ex) { UsageStatus = "Не удалось прочитать использование: " + ex.Message; }
+    }
+
+    // Folder sizes can take minutes on game libraries, so the list is shown first and sizes arrive one by one.
+    private async Task MeasureSizesAsync(UsageRow[] rows, CancellationToken cancellation)
+    {
+        var tree = new FileSystemTree();
+        try
+        {
+            foreach (UsageRow row in rows.Where(r => r.Usage.Program.InstallLocation is { Length: > 3 }))
+            {
+                cancellation.ThrowIfCancellationRequested();
+                string location = row.Usage.Program.InstallLocation!;
+                (long bytes, bool complete) = await Task.Run(() => System.IO.Directory.Exists(location)
+                    ? ProgramInventory.Measure(location, tree, cancellation, maximumFiles: 200_000) : (-1L, true), cancellation);
+                if (bytes < 0) continue;
+                if (complete || bytes > (row.SizeBytes ?? 0)) { row.SizeBytes = bytes; row.Measured = complete; }
+                UpdateUsageSummary();
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void UpdateUsageSummary()
+    {
+        UnusedSummary unused = UsageAnalyzer.Unused(UsageRows.Select(r => r.Usage with { Program = r.Usage.Program with { SizeBytes = r.SizeBytes } }));
+        UsageSummary = unused.Programs == 0
+            ? "Нет программ, для которых данных достаточно, чтобы сказать «не запускалась»."
+            : $"{DisplayFormat.Count(unused.Programs)} программ не запускались {UsageAnalyzer.DefaultThresholdDays}+ дней · {DisplayFormat.Size(unused.Bytes)}"
+                + (unused.WithoutSize > 0 ? $" (размер неизвестен у {DisplayFormat.Count(unused.WithoutSize)})" : "")
+                + ". Это подсказка: удаление программ Spacewise не выполняет.";
     }
 
     // Three separate coverage buckets (FR-SCAN-002) instead of one "skipped" number.

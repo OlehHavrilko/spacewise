@@ -146,6 +146,25 @@ public sealed class QuarantineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Purged_records_are_trimmed_after_90_days_but_the_decision_journal_is_kept()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5));
+        await using (writer)
+        {
+            long Count(string table) => writer.ExecuteAsync(c => { using var cmd = c.CreateCommand(); cmd.CommandText = $"SELECT count(*) FROM {table}"; return (long)cmd.ExecuteScalar()!; }, Ct).Result;
+            var purger = new FakePurger(_ => RemoveStatus.Removed);
+            await new QuarantineService(store, purger, new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now)).PurgeAllAsync(Ct);
+
+            await new QuarantineService(store, purger, new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now.AddDays(89))).PurgeExpiredAsync(Ct);
+            Assert.Equal(1, Count("quarantine"));
+            await new QuarantineService(store, purger, new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now.AddDays(91))).PurgeExpiredAsync(Ct);
+            Assert.Equal(0, Count("quarantine"));
+            Assert.Equal(2, Count("decision_journal"));
+            Assert.Null(await store.VerifyJournalAsync(Ct));
+        }
+    }
+
+    [Fact]
     public async Task Restore_marks_restored_and_leaves_failures_held()
     {
         (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5), (@"C:\T\busy", @"C:\Q\2", 7));

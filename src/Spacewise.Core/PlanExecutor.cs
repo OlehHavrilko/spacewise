@@ -1,6 +1,6 @@
 namespace Spacewise.Core;
 
-public enum RemoveStatus { Removed, Gone, Changed, Locked, Unsafe, Failed }
+public enum RemoveStatus { Removed, Gone, Changed, Locked, Unsafe, Failed, Interrupted }
 
 public sealed record RemoveResult(RemoveStatus Status, int Code = 0, string? StoredPath = null, byte[]? Sha256 = null);
 
@@ -39,33 +39,46 @@ public sealed record ExecutionReport(IReadOnlyList<ItemOutcome> Outcomes, bool C
     public long BytesRemoved => Outcomes.Where(o => o.Status == RemoveStatus.Removed).Sum(o => o.Item.ExpectedSize);
 }
 
+// Write-ahead hook: Begin is recorded before an item is touched, Complete right after, so a crash leaves at most one item in doubt.
+public interface IExecutionJournal
+{
+    void Begin(int seq, PlanItem item);
+    void Complete(int seq, ItemOutcome outcome);
+}
+
 public sealed class PlanRejectedException(string message) : Exception(message);
 
 // Runs a plan: re-verifies digest, expiry and the protected-path policy, then removes item by item.
 // A changed, locked or vanished file is skipped and reported; one item never stops the rest.
 public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, TimeProvider time)
 {
-    public ExecutionReport Execute(CleanupPlan plan, CancellationToken cancellation = default)
+    public ExecutionReport Execute(CleanupPlan plan, CancellationToken cancellation = default, IExecutionJournal? journal = null)
     {
         PolicyDecision decision = MutationPolicy.Evaluate(plan, time.GetUtcNow().UtcDateTime);
         if (!decision.Allowed) throw new PlanRejectedException(decision.Reason);
 
         var outcomes = new List<ItemOutcome>(plan.Items.Count);
-        foreach (PlanItem item in plan.Items)
+        for (int seq = 0; seq < plan.Items.Count; seq++)
         {
+            PlanItem item = plan.Items[seq];
             if (cancellation.IsCancellationRequested) return new(outcomes, Cancelled: true);
             if (item.ActionId != "delete" || !ProtectedPaths.Check(item.Path, folders).Allowed)
             {
-                outcomes.Add(new(item, RemoveStatus.Unsafe));
+                var refused = new ItemOutcome(item, RemoveStatus.Unsafe);
+                outcomes.Add(refused);
+                journal?.Complete(seq, refused);
                 continue;
             }
+            journal?.Begin(seq, item);
             RemoveResult result;
             try { result = remover.Remove(item); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 result = new(RemoveStatus.Failed, e.HResult);
             }
-            outcomes.Add(new(item, result.Status, result.Code, result.StoredPath, result.Sha256));
+            var outcome = new ItemOutcome(item, result.Status, result.Code, result.StoredPath, result.Sha256);
+            outcomes.Add(outcome);
+            journal?.Complete(seq, outcome);
         }
         return new(outcomes, Cancelled: false);
     }

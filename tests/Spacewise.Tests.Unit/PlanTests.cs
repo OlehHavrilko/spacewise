@@ -93,6 +93,36 @@ public sealed class PlanTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => store.LoadAsync(id, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task Execution_report_updates_item_states_actions_and_plan_state()
+    {
+        var keys = new TestKeys();
+        await using var writer = new DatabaseWriter(SqliteDatabase.Open(Path.Combine(dir, "journal.db"), Schemas.Journal, keys).Connection);
+        var store = new PlanStore(writer);
+        CleanupPlan plan = Plan(Item(@"C:\Temp", 5), Item(@"C:\Temp", 7), Item(@"C:\Temp\c", 9));
+        long id = await store.SaveAsync(plan, cancellation: TestContext.Current.CancellationToken);
+        var report = new ExecutionReport(
+            [new(plan.Items[0], RemoveStatus.Removed), new(plan.Items[1], RemoveStatus.Locked, 32)], Cancelled: true);
+
+        await new ExecutionStore(writer).RecordAsync(id, report, Now, TestContext.Current.CancellationToken);
+
+        string[] rows = await writer.ExecuteAsync(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT state || ':' || coalesce(skip_reason, '') FROM plan_items ORDER BY seq";
+            using var r = cmd.ExecuteReader();
+            var list = new List<string>();
+            while (r.Read()) list.Add(r.GetString(0));
+            r.Close();
+            cmd.CommandText = "SELECT state FROM plans";
+            list.Add((string)cmd.ExecuteScalar()!);
+            cmd.CommandText = "SELECT count(*) || ':' || sum(native_reported) FROM actions";
+            list.Add((string)cmd.ExecuteScalar()!);
+            return list.ToArray();
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(["done:", "skipped:Locked", "pending:", "cancelled", "2:5"], rows);
+    }
+
     private sealed class TestKeys : IDatabaseKeySource
     {
         public byte[] GetKey(string database) => Enumerable.Repeat((byte)7, 32).ToArray();

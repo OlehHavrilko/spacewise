@@ -165,6 +165,27 @@ public sealed class QuarantineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Recent_decisions_list_newest_first_and_settings_round_trip()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5));
+        await using (writer)
+        {
+            var service = new QuarantineService(store, new FakePurger(_ => RemoveStatus.Removed), new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now.AddMinutes(1)));
+            await service.RestoreAllAsync(Ct);
+
+            var rows = await store.RecentDecisionsAsync(10, Ct);
+            Assert.Equal(["restore", "approve"], rows.Select(r => r.Action));
+            Assert.Equal([@"C:\T\a", @"C:\T\a"], rows.Select(r => r.Path));
+            Assert.Single(await store.RecentDecisionsAsync(1, Ct));
+
+            Assert.Null(await store.GetSettingAsync("onboarded", Ct));
+            await store.SaveSettingAsync("onboarded", "true", Ct);
+            await store.SaveSettingAsync("onboarded", "true", Ct);
+            Assert.Equal("true", await store.GetSettingAsync("onboarded", Ct));
+        }
+    }
+
+    [Fact]
     public async Task Restore_marks_restored_and_leaves_failures_held()
     {
         (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5), (@"C:\T\busy", @"C:\Q\2", 7));

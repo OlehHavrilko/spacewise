@@ -232,12 +232,14 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     {
         try
         {
+            ShowWelcome = await executions.GetSettingAsync("onboarded") is null;
             RecoveryReport recovered = await recovery.RecoverAsync();
             PurgeReport expired = await Task.Run(() => quarantine.PurgeExpiredAsync());
             await RefreshQuarantineAsync((recovered.NeverMoved + recovered.Recovered + recovered.Unknown > 0
                     ? $"После прерванной очистки: не тронуто {DisplayFormat.Count(recovered.NeverMoved)}, найдено в карантине {DisplayFormat.Count(recovered.Recovered)}, неясно {DisplayFormat.Count(recovered.Unknown)}. " : "")
                 + (recovered.UnrecordedFiles > 0 ? $"Неучтённых файлов в карантине: {DisplayFormat.Count(recovered.UnrecordedFiles)}. " : "")
                 + (expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : ""));
+            await RefreshHistoryAsync();
         }
         catch (Exception ex) { AppLog.Failure("Startup recovery", ex); QuarantineStatus = "Карантин недоступен: " + ex.Message; }
     }
@@ -291,6 +293,60 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         }
         catch (Exception ex) { AppLog.Failure("Quarantine purge", ex); QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
+    }
+
+    public sealed record HistoryRow(string Time, string Action, string Result, string Category, string Size, string Path);
+
+    [ObservableProperty] public partial IReadOnlyList<HistoryRow> History { get; set; } = [];
+    [ObservableProperty] public partial string HistoryStatus { get; set; } = "";
+    [ObservableProperty] public partial bool ShowWelcome { get; set; }
+
+    private static string ActionText(string action, string result) => action switch
+    {
+        "restore" => "Возврат из карантина",
+        "purge" => "Окончательное удаление из карантина",
+        _ => "Очистка (перенос в карантин)",
+    };
+
+    private static string ResultText(string result) => result switch
+    {
+        "Removed" => "Перенесён", "Gone" => "Файла уже не было", "Changed" => "Изменён после оценки, пропущен", "Locked" => "Занят, пропущен",
+        "Unsafe" => "Отклонено защитой", "Failed" => "Ошибка", "Interrupted" => "Прервано", "Done" => "Выполнено", _ => result,
+    };
+
+    [RelayCommand]
+    private async Task RefreshHistoryAsync()
+    {
+        try
+        {
+            var rows = await executions.RecentDecisionsAsync(500);
+            History = [.. rows.Select(r => new HistoryRow(r.TimeUtc.ToLocalTime().ToString("g"), ActionText(r.Action, r.Result), ResultText(r.Result),
+                r.Category, DisplayFormat.Size(r.Bytes), r.Path))];
+            HistoryStatus = rows.Count == 0 ? "Журнал пока пуст" : $"Последние записи: {DisplayFormat.Count(rows.Count)}";
+        }
+        catch (Exception ex) { AppLog.Failure("History", ex); HistoryStatus = "Журнал не прочитан: " + ex.Message; }
+    }
+
+    // A5/A14: every decision row is chained to the previous one; an edited or removed row is found here.
+    [RelayCommand]
+    private async Task VerifyJournalAsync()
+    {
+        try
+        {
+            long? broken = await Task.Run(() => executions.VerifyJournalAsync());
+            HistoryStatus = broken is null ? "Цепочка журнала цела: записи не менялись и не удалялись."
+                : $"Цепочка журнала нарушена, первая проблемная запись №{broken}. Журнал могли править вне Spacewise.";
+            AppLog.Info("Journal verification: broken row {Row}", broken);
+        }
+        catch (Exception ex) { AppLog.Failure("Journal verification", ex); HistoryStatus = "Проверка не выполнена: " + ex.Message; }
+    }
+
+    [RelayCommand]
+    private async Task DismissWelcomeAsync()
+    {
+        ShowWelcome = false;
+        try { await executions.SaveSettingAsync("onboarded", "true"); }
+        catch (Exception ex) { AppLog.Failure("Onboarding flag", ex); }
     }
 
     [ObservableProperty] public partial IReadOnlyList<UsageRow> UsageRows { get; set; } = [];

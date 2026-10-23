@@ -16,6 +16,17 @@ public sealed class MetadataScanner : IScanner
     private static IEnumerator<Entry> Enumerate(string path) => new FileSystemEnumerable<Entry>(path,
         (ref FileSystemEntry e) => new Entry(e.ToFullPath(), e.Attributes, e.Length), Options).GetEnumerator();
     private const int TopCount = 100;
+    private const int RootsAfterMilliseconds = 2000;
+    private const int MaxRoots = 20;
+
+    // Name of the top-level folder under the root that contains the path; empty for files in the root itself.
+    private static string TopLevelName(string path, string prefix)
+    {
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return "";
+        ReadOnlySpan<char> rest = path.AsSpan(prefix.Length);
+        int separator = rest.IndexOf('\\');
+        return separator < 0 ? "" : rest[..separator].ToString();
+    }
 
     public Task<ScanResult> ScanAsync(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation)
         => Task.Run(() =>
@@ -42,6 +53,12 @@ public sealed class MetadataScanner : IScanner
         ScanState state = ScanState.Completed;
         bool stoppedEarly = false;
         var clock = Stopwatch.StartNew();
+        var total = Stopwatch.StartNew();
+        string prefix = root.EndsWith('\\') ? root : root + '\\';
+        var rootTotals = new Dictionary<string, (long Files, long Bytes)>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<RootAggregate>? RootsDue() => total.ElapsedMilliseconds < RootsAfterMilliseconds ? null
+            : rootTotals.Select(x => new RootAggregate(x.Key, x.Value.Files, x.Value.Bytes))
+                .OrderByDescending(x => x.LogicalBytes).Take(MaxRoots).ToArray();
         void Problem(string path, Exception ex)
         {
             errors++;
@@ -119,6 +136,8 @@ public sealed class MetadataScanner : IScanner
                         long length = entry.Length;
                         bytes = checked(bytes + length);
                         files++;
+                        string rootName = TopLevelName(path, prefix);
+                        rootTotals[rootName] = rootTotals.TryGetValue(rootName, out var t) ? (t.Files + 1, t.Bytes + length) : (1, length);
                         top.Enqueue(new FileFinding(path, length), length);
                         if (top.Count > TopCount) top.Dequeue();
                     }
@@ -126,7 +145,7 @@ public sealed class MetadataScanner : IScanner
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Problem(path, ex); }
                 if (clock.ElapsedMilliseconds >= 250)
                 {
-                    progress?.Report(new(files, bytes, skipped, errors));
+                    progress?.Report(new(files, bytes, skipped, errors, RootsDue()));
                     clock.Restart();
                 }
             }
@@ -137,7 +156,7 @@ public sealed class MetadataScanner : IScanner
         finally { while (stack.Count > 0) stack.Pop().Entries.Dispose(); }
     Finished:
         if (state == ScanState.Completed && errors > 0) state = ScanState.Partial;
-        progress?.Report(new(files, bytes, skipped, errors));
+        progress?.Report(new(files, bytes, skipped, errors, RootsDue()));
         // One handle query per top-N file only; skipped after cancellation to keep Stop fast.
         IEnumerable<FileFinding> largest = top.UnorderedItems.Select(x => x.Element).OrderByDescending(x => x.LogicalBytes);
         if (state != ScanState.Cancelled) largest = largest.Select(FileMetadata.Enrich);

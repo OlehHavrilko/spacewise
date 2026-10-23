@@ -98,6 +98,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
     [ObservableProperty] public partial string QuarantineStatus { get; set; } = "";
+    [ObservableProperty] public partial string RootsSummary { get; set; } = "";
 
 
     // ScanCommand.IsRunning drives busy state; ScanCancelCommand is generated alongside it.
@@ -105,11 +106,16 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private async Task ScanAsync(CancellationToken cancellation)
     {
         Files = [];
+        RootsSummary = "";
         IsBusy = true;
         Status = "Анализ выполняется…";
         try
         {
-            var progress = new Progress<ScanProgress>(p => Status = $"Файлов: {DisplayFormat.Count(p.Files)} · логически: {DisplayFormat.Size(p.LogicalBytes)} · пропуски: {DisplayFormat.Count(p.Skipped)} · ошибки: {DisplayFormat.Count(p.Errors)}");
+            var progress = new Progress<ScanProgress>(p =>
+            {
+                Status = $"Файлов: {DisplayFormat.Count(p.Files)} · логически: {DisplayFormat.Size(p.LogicalBytes)} · пропуски: {DisplayFormat.Count(p.Skipped)} · ошибки: {DisplayFormat.Count(p.Errors)}";
+                if (p.Roots is not null) RootsSummary = RootsText(p.Roots);
+            });
             string[] excluded = ExclusionsText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var result = await scanner.ScanAsync(new(RootPath.Trim(), excluded), progress, cancellation);
             Files = result.LargestFiles.Select(FileRow.From).ToArray();
@@ -131,6 +137,10 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         }
         finally { IsBusy = false; }
     }
+
+    // FR-SCAN-004: totals per top-level folder, shown while the scan runs.
+    private static string RootsText(IEnumerable<RootAggregate> roots) => string.Join("\n", roots.Select(r =>
+        $"{(r.Name.Length == 0 ? "(файлы в корне)" : r.Name)} — {DisplayFormat.Size(r.LogicalBytes)}, файлов: {DisplayFormat.Count(r.Files)}"));
 
     // FR-CLN-002: the figure is an estimate of logical bytes, never presented as measured.
     [RelayCommand(IncludeCancelCommand = true)]

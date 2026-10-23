@@ -3,7 +3,10 @@ namespace Spacewise.Core;
 public enum ScanState { Idle, Scanning, Completed, Partial, Cancelled, Failed, RootNotFound }
 public sealed record ScanRequest(string Root, IReadOnlyList<string> Exclusions, int MaximumFiles = 500_000,
     int MaximumDirectoryDepth = 256);
-public sealed record ScanProgress(long Files, long LogicalBytes, long Skipped, long Errors);
+// Roots is null until the scan has run for 2 s (FR-SCAN-004); it is sent with each later report.
+public sealed record ScanProgress(long Files, long LogicalBytes, long Skipped, long Errors, IReadOnlyList<RootAggregate>? Roots = null);
+// Totals per top-level folder of the scan root; files directly in the root have an empty name.
+public sealed record RootAggregate(string Name, long Files, long LogicalBytes);
 // Volume serial plus 128-bit NTFS/ReFS file ID; equal identities are the same file (hard links).
 public readonly record struct FileIdentity(ulong VolumeSerial, UInt128 FileId);
 public sealed record FileFinding(string Path, long LogicalBytes, long? AllocatedBytes = null,

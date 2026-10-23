@@ -18,7 +18,11 @@ public sealed class MetadataScanner : IScanner
     private const int TopCount = 100;
 
     public Task<ScanResult> ScanAsync(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation)
-        => Task.Run(() => Scan(request, progress, cancellation));
+        => Task.Run(() =>
+        {
+            using BackgroundWork background = BackgroundWork.Enter();
+            return Scan(request, progress, cancellation);
+        });
 
     private static ScanResult Scan(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation)
     {

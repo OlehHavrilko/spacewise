@@ -110,6 +110,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             string[] excluded = ExclusionsText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var result = await scanner.ScanAsync(new(RootPath.Trim(), excluded), progress, cancellation);
             Files = result.LargestFiles.Select(FileRow.From).ToArray();
+            AppLog.Info("Scan finished: state {State}, files {Files}, excluded {Excluded}, inaccessible {Inaccessible}", result.State, result.Files, result.ExcludedByPolicy, result.Inaccessible);
             Status = result.State == ScanState.RootNotFound
                 ? $"Анализ не выполнен: папка не найдена — {result.Root}"
                 : $"{Display(result.State)} · файлов: {DisplayFormat.Count(result.Files)} · логически: {DisplayFormat.Size(result.LogicalBytes)}";
@@ -121,6 +122,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         }
         catch (Exception ex)
         {
+            AppLog.Failure("Scan", ex);
             Status = "Проверка не выполнена";
             Details = ex.Message;
         }
@@ -140,13 +142,14 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             IReadOnlyList<RulePreview> previews = await Task.Run(() => cleanup.Preview(cancellation), cancellation);
             RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0).OrderByDescending(p => p.LogicalBytes)];
             SetRows([.. found.Select(p => new CleanupRow(p))]);
+            AppLog.Info("Cleanup estimate: {Categories} categories, {Files} files", found.Length, found.Sum(p => p.Items.Count));
             CleanupStatus = found.Length == 0
                 ? "По правилам каталога ничего не найдено"
                 : $"Оценка: {DisplayFormat.Size(found.Sum(p => p.LogicalBytes))} в {DisplayFormat.Count(found.Length)} категориях. "
                   + "Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Очистка переносит файлы в карантин.";
         }
         catch (OperationCanceledException) { CleanupStatus = "Оценка остановлена"; }
-        catch (Exception ex) { CleanupStatus = "Оценка не выполнена: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Cleanup estimate", ex); CleanupStatus = "Оценка не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -204,6 +207,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
             ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
             await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
+            AppLog.Info("Cleanup finished: plan {PlanId}, quarantined {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
             var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
             CleanupStatus = $"Перемещено в карантин: {DisplayFormat.Count(report.Removed)} файлов (оценка по логическим размерам: {DisplayFormat.Size(report.BytesRemoved)}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина"
                 + (report.Cancelled ? "; остановлено пользователем" : "")
@@ -213,7 +217,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             await RefreshQuarantineAsync();
         }
         catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
-        catch (Exception ex) { CleanupStatus = "Очистка не выполнена: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Cleanup", ex); CleanupStatus = "Очистка не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -235,7 +239,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 + (recovered.UnrecordedFiles > 0 ? $"Неучтённых файлов в карантине: {DisplayFormat.Count(recovered.UnrecordedFiles)}. " : "")
                 + (expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : ""));
         }
-        catch (Exception ex) { QuarantineStatus = "Карантин недоступен: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Startup recovery", ex); QuarantineStatus = "Карантин недоступен: " + ex.Message; }
     }
 
     private async Task RefreshQuarantineAsync(string prefix = "")
@@ -260,11 +264,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         try
         {
             RestoreReport report = await Task.Run(() => quarantine.RestoreAllAsync());
+            AppLog.Info("Restore: restored {Restored}, failed {Failed}, hash mismatch {Mismatch}", report.Restored, report.Failed, report.HashMismatch);
             await RefreshQuarantineAsync($"Возвращено: {DisplayFormat.Count(report.Restored)}"
                 + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)} (на месте уже есть файл или карантин недоступен)" : "")
                 + (report.HashMismatch > 0 ? $"; не возвращено из-за несовпадения sha256: {DisplayFormat.Count(report.HashMismatch)} (файл остался в карантине)" : "") + ". ");
         }
-        catch (Exception ex) { QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Restore", ex); QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -280,10 +285,11 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 + "Вернуть их после этого будет нельзя.";
             if (!confirmation.Confirm("Очистка карантина", message)) { QuarantineStatus = "Очистка карантина отменена"; return; }
             PurgeReport report = await Task.Run(() => quarantine.PurgeAllAsync());
+            AppLog.Info("Quarantine purge: purged {Purged}, failed {Failed}, measured delta {Delta}", report.Purged, report.Failed, report.MeasuredFreeDelta);
             await RefreshQuarantineAsync($"Удалено окончательно: {DisplayFormat.Count(report.Purged)}"
                 + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)}" : "") + ". " + Measured(report) + " ");
         }
-        catch (Exception ex) { QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Quarantine purge", ex); QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -317,7 +323,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             sizing = new CancellationTokenSource();
             _ = MeasureSizesAsync(rows, sizing.Token);
         }
-        catch (Exception ex) { UsageStatus = "Не удалось прочитать использование: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Usage read", ex); UsageStatus = "Не удалось прочитать использование: " + ex.Message; }
     }
 
     // Folder sizes can take minutes on game libraries, so the list is shown first and sizes arrive one by one.

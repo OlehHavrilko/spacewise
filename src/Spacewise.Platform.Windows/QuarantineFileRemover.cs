@@ -57,12 +57,19 @@ public sealed unsafe partial class QuarantineFileRemover(string quarantineDirect
     }
 
     // Puts a quarantined file back under its original name. Never replaces an existing file.
-    public RestoreResult Restore(string storedPath, string originalPath)
+    public RestoreResult Restore(string storedPath, string originalPath, byte[]? expectedSha256 = null)
     {
         string? originalParent = Path.GetDirectoryName(originalPath), name = Path.GetFileName(originalPath);
         if (string.IsNullOrEmpty(originalParent) || string.IsNullOrEmpty(name)) return new(false);
         if (!string.Equals(Path.GetDirectoryName(storedPath), Path.TrimEndingDirectorySeparator(quarantineDirectory), StringComparison.OrdinalIgnoreCase))
             return new(false);
+        if (expectedSha256 is not null)
+        {
+            // Unreadable counts as unverified: do not put back content that cannot be checked.
+            byte[]? actual = Hash(storedPath);
+            if (actual is null || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(actual, expectedSha256))
+                return new(false, 0, HashMismatch: true);
+        }
         using SafeFileHandle destination = OpenFile(@"\\?\" + originalParent, ListDirectory | ReadAttributes | Synchronize, ShareAll, 0,
             OpenExisting, BackupSemantics | OpenReparse, 0);
         if (destination.IsInvalid) return new(false, Marshal.GetLastPInvokeError());

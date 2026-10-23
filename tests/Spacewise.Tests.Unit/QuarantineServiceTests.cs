@@ -38,7 +38,8 @@ public sealed class QuarantineServiceTests : IDisposable
 
     private sealed class FakeRestorer : IFileRestorer
     {
-        public RestoreResult Restore(string storedPath, string originalPath) => new(!originalPath.EndsWith("busy"));
+        public RestoreResult Restore(string storedPath, string originalPath, byte[]? expectedSha256 = null) =>
+            originalPath.EndsWith("bad") ? new(false, 0, true) : new(!originalPath.EndsWith("busy"));
     }
 
     private sealed class FakeSpace(Func<long?> free) : IVolumeSpace
@@ -154,6 +155,19 @@ public sealed class QuarantineServiceTests : IDisposable
             RestoreReport report = await service.RestoreAllAsync(Ct);
             Assert.Equal((1, 1), (report.Restored, report.Failed));
             Assert.Equal([@"C:\T\busy"], (await store.HeldAsync(Ct)).Select(f => f.OriginalPath));
+        }
+    }
+
+    [Fact]
+    public async Task Restore_reports_hash_mismatch_separately_and_keeps_the_file_held()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5), (@"C:\T\bad", @"C:\Q\2", 7));
+        await using (writer)
+        {
+            var service = new QuarantineService(store, new FakePurger(_ => RemoveStatus.Removed), new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now));
+            RestoreReport report = await service.RestoreAllAsync(Ct);
+            Assert.Equal((1, 0, 1), (report.Restored, report.Failed, report.HashMismatch));
+            Assert.Equal([@"C:\T\bad"], (await store.HeldAsync(Ct)).Select(f => f.OriginalPath));
         }
     }
 }

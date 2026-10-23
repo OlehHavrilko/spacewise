@@ -13,29 +13,40 @@ public sealed record FileRow(string Path, string Size, string OnDisk, string Not
         f.IsHardLinked ? $"Жёсткая ссылка ({f.Links}): 0 байт выгоды" : "");
 }
 
-// One catalog rule in the cleanup estimate.
-public sealed record CleanupRow(string Title, string Files, string Estimate, string Consequence, string Note, string SideEffects)
+// One catalog rule in the cleanup estimate. Only rules the executor can run by file list are selectable.
+public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
 {
-    public static CleanupRow From(RulePreview p)
+    public RulePreview Preview { get; } = preview;
+    public bool CanSelect { get; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0;
+    [ObservableProperty] public partial bool IsSelected { get; set; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0;
+    public string Title => Preview.Rule.TitleRu;
+    public string Files => DisplayFormat.Count(Preview.Items.Count);
+    public string Estimate => DisplayFormat.Size(Preview.LogicalBytes);
+    public string SideEffects => Preview.Rule.SideEffectsRu;
+    public string Consequence => Preview.Rule.Consequence switch
     {
-        var notes = new List<string>();
-        if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
-        if (p.Running.Count > 0) notes.Add("запущено, закройте: " + string.Join(", ", p.Running));
-        if (p.LockedBy.Count > 0)
-            notes.Add("файлы заняты: " + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
-                + (p.LockedBy.Count > 5 ? $" и ещё {p.LockedBy.Count - 5}" : "")
-                + (p.LockChecked < p.Items.Count ? $"; проверено {DisplayFormat.Count(p.LockChecked)} из {DisplayFormat.Count(p.Items.Count)}" : ""));
-        if (p.TooRecent > 0) notes.Add($"свежих пропущено: {DisplayFormat.Count(p.TooRecent)}");
-        if (p.Protected > 0) notes.Add($"защищённых пропущено: {DisplayFormat.Count(p.Protected)}");
-        if (p.Deferred > 0) notes.Add($"ссылок и облачных пропущено: {DisplayFormat.Count(p.Deferred)}");
-        string consequence = p.Rule.Consequence switch
+        Spacewise.Catalog.Consequence.Regenerated => "Создастся заново",
+        Spacewise.Catalog.Consequence.Redownloaded => "Скачается заново",
+        _ => "Удаляется безвозвратно",
+    };
+    public string Note
+    {
+        get
         {
-            Spacewise.Catalog.Consequence.Regenerated => "Создастся заново",
-            Spacewise.Catalog.Consequence.Redownloaded => "Скачается заново",
-            _ => "Удаляется безвозвратно",
-        };
-        return new(p.Rule.TitleRu, DisplayFormat.Count(p.Items.Count), DisplayFormat.Size(p.LogicalBytes), consequence,
-            string.Join("; ", notes), p.Rule.SideEffectsRu);
+            RulePreview p = Preview;
+            var notes = new List<string>();
+            if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
+            else if (p.Rule.Action != "delete") notes.Add("системный обработчик, пока только оценка");
+            if (p.Running.Count > 0) notes.Add("запущено, закройте: " + string.Join(", ", p.Running));
+            if (p.LockedBy.Count > 0)
+                notes.Add("файлы заняты: " + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
+                    + (p.LockedBy.Count > 5 ? $" и ещё {p.LockedBy.Count - 5}" : "")
+                    + (p.LockChecked < p.Items.Count ? $"; проверено {DisplayFormat.Count(p.LockChecked)} из {DisplayFormat.Count(p.Items.Count)}" : ""));
+            if (p.TooRecent > 0) notes.Add($"свежих пропущено: {DisplayFormat.Count(p.TooRecent)}");
+            if (p.Protected > 0) notes.Add($"защищённых пропущено: {DisplayFormat.Count(p.Protected)}");
+            if (p.Deferred > 0) notes.Add($"ссылок и облачных пропущено: {DisplayFormat.Count(p.Deferred)}");
+            return string.Join("; ", notes);
+        }
     }
 }
 
@@ -55,14 +66,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial string Status { get; set; } = "Готов к проверке";
     [ObservableProperty] public partial string Details { get; set; } = Limitations;
     [ObservableProperty] public partial IReadOnlyList<FileRow> Files { get; set; } = [];
-    [ObservableProperty] public partial IReadOnlyList<CleanupRow> Cleanup { get; set; } = [];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectionSummary))] public partial IReadOnlyList<CleanupRow> Cleanup { get; set; } = [];
     [ObservableProperty] public partial string CleanupStatus { get; set; } = "Оценка не выполнялась";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
     [ObservableProperty] public partial string QuarantineStatus { get; set; } = "";
 
-    private CleanupPlan? plan;
-    private IReadOnlyList<RulePreview> planned = [];
 
     // ScanCommand.IsRunning drives busy state; ScanCancelCommand is generated alongside it.
     [RelayCommand(IncludeCancelCommand = true)]
@@ -99,8 +108,6 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private async Task PreviewCleanupAsync(CancellationToken cancellation)
     {
         Cleanup = [];
-        plan = null;
-        planned = [];
         CleanCommand.NotifyCanExecuteChanged();
         IsBusy = true;
         CleanupStatus = "Оценка выполняется…";
@@ -108,10 +115,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         {
             IReadOnlyList<RulePreview> previews = await Task.Run(() => cleanup.Preview(cancellation), cancellation);
             RulePreview[] found = [.. previews.Where(p => p.Items.Count > 0).OrderByDescending(p => p.LogicalBytes)];
-            Cleanup = [.. found.Select(CleanupRow.From)];
-            planned = found;
-            plan = PlanBuilder.Build(found, time.GetUtcNow().UtcDateTime);
-            CleanCommand.NotifyCanExecuteChanged();
+            SetRows([.. found.Select(p => new CleanupRow(p))]);
             CleanupStatus = found.Length == 0
                 ? "По правилам каталога ничего не найдено"
                 : $"Оценка: {DisplayFormat.Size(found.Sum(p => p.LogicalBytes))} в {DisplayFormat.Count(found.Length)} категориях. "
@@ -122,17 +126,49 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         finally { IsBusy = false; }
     }
 
-    private bool CanClean() => plan is { Items.Count: > 0 };
+    private void SetRows(CleanupRow[] rows)
+    {
+        foreach (CleanupRow row in Cleanup) row.PropertyChanged -= OnRowChanged;
+        foreach (CleanupRow row in rows) row.PropertyChanged += OnRowChanged;
+        Cleanup = rows;
+        CleanCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(CleanupRow.IsSelected)) return;
+        CleanCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(SelectionSummary));
+    }
+
+    public string SelectionSummary
+    {
+        get
+        {
+            CleanupRow[] chosen = [.. Cleanup.Where(r => r.IsSelected)];
+            return Cleanup.Count == 0 ? "" : $"Выбрано категорий: {DisplayFormat.Count(chosen.Length)} из {DisplayFormat.Count(Cleanup.Count)}, "
+                + $"оценка {DisplayFormat.Size(chosen.Sum(r => r.Preview.LogicalBytes))}";
+        }
+    }
+
+    [RelayCommand]
+    private void SelectAll() { foreach (CleanupRow row in Cleanup.Where(r => r.CanSelect)) row.IsSelected = true; }
+
+    [RelayCommand]
+    private void SelectNone() { foreach (CleanupRow row in Cleanup) row.IsSelected = false; }
+
+    private bool CanClean() => Cleanup.Any(r => r.IsSelected && r.CanSelect);
 
     // Quarantine is the default and only method: files are moved, not erased, and can be put back.
     [RelayCommand(CanExecute = nameof(CanClean), IncludeCancelCommand = true)]
     private async Task CleanAsync(CancellationToken cancellation)
     {
-        CleanupPlan current = plan!;
+        RulePreview[] chosen = [.. Cleanup.Where(r => r.IsSelected && r.CanSelect).Select(r => r.Preview)];
+        CleanupPlan current = PlanBuilder.Build(chosen, time.GetUtcNow().UtcDateTime);
         PolicyDecision decision = MutationPolicy.Evaluate(current, time.GetUtcNow().UtcDateTime);
         if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
         string message = $"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}) "
-            + $"из категорий: {DisplayFormat.Count(planned.Count(p => p.Items.Count > 0))}.\n\n"
+            + $"из категорий: {DisplayFormat.Count(chosen.Length)}.\n\n"
             + "Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. Занятые и изменённые после оценки файлы будут пропущены. "
             + "Место на диске освободится после очистки карантина.\n\nПродолжить?";
         if (!confirmation.Confirm("Очистка", message)) { CleanupStatus = "Очистка отменена"; return; }
@@ -149,10 +185,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 + (report.Cancelled ? "; остановлено пользователем" : "")
                 + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "")
                 + ". Оценка устарела, выполните её заново.";
-            Cleanup = [];
-            plan = null;
-            planned = [];
-            CleanCommand.NotifyCanExecuteChanged();
+            SetRows([]);
             await RefreshQuarantineAsync();
         }
         catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
@@ -196,7 +229,8 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         {
             RestoreReport report = await Task.Run(() => quarantine.RestoreAllAsync());
             await RefreshQuarantineAsync($"Возвращено: {DisplayFormat.Count(report.Restored)}"
-                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)} (на месте уже есть файл или карантин недоступен)" : "") + ". ");
+                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)} (на месте уже есть файл или карантин недоступен)" : "")
+                + (report.HashMismatch > 0 ? $"; не возвращено из-за несовпадения sha256: {DisplayFormat.Count(report.HashMismatch)} (файл остался в карантине)" : "") + ". ");
         }
         catch (Exception ex) { QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
         finally { IsBusy = false; }

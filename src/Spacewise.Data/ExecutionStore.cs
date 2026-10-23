@@ -49,6 +49,8 @@ public sealed class ExecutionStore(DatabaseWriter journal)
                 // Logical size from the plan; real freed space is measured separately (FR-CLN-002).
                 reported.Value = removed ? outcome.Item.ExpectedSize : 0;
                 action.ExecuteNonQuery();
+                DecisionJournal.Append(connection, transaction, completedUtc, new("user", "manual", $"{outcome.Item.RuleId}@{outcome.Item.RuleVersion}",
+                    outcome.Item.Path, outcome.Item.ExpectedSize, outcome.Item.RuleId, [outcome.Item.RuleId], "approve", outcome.Status.ToString(), outcome.StoredPath));
                 if (removed && outcome.StoredPath is { } stored)
                 {
                     hold.Parameters.Clear();
@@ -92,20 +94,30 @@ public sealed class ExecutionStore(DatabaseWriter journal)
         journal.ExecuteAsync(connection =>
         {
             using SqliteCommand update = connection.CreateCommand();
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            update.Transaction = transaction;
             update.CommandText = "UPDATE quarantine SET restored_utc = $at WHERE id = $id";
             update.Parameters.AddWithValue("$at", restoredUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             update.Parameters.AddWithValue("$id", quarantineId);
-            return update.ExecuteNonQuery();
+            int rows = update.ExecuteNonQuery();
+            LogQuarantineEvent(connection, transaction, quarantineId, restoredUtc, "restore");
+            transaction.Commit();
+            return rows;
         }, cancellation);
 
     public Task MarkPurgedAsync(long quarantineId, DateTime purgedUtc, CancellationToken cancellation = default) =>
         journal.ExecuteAsync(connection =>
         {
             using SqliteCommand update = connection.CreateCommand();
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            update.Transaction = transaction;
             update.CommandText = "UPDATE quarantine SET purged_utc = $at WHERE id = $id";
             update.Parameters.AddWithValue("$at", purgedUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             update.Parameters.AddWithValue("$id", quarantineId);
-            return update.ExecuteNonQuery();
+            int rows = update.ExecuteNonQuery();
+            LogQuarantineEvent(connection, transaction, quarantineId, purgedUtc, "purge");
+            transaction.Commit();
+            return rows;
         }, cancellation);
 
     public Task SaveSettingAsync(string key, string valueJson, CancellationToken cancellation = default) =>
@@ -117,4 +129,22 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             upsert.Parameters.AddWithValue("$value", valueJson);
             return upsert.ExecuteNonQuery();
         }, cancellation);
+
+    // Null when the decision journal chain is intact, otherwise the first broken row id.
+    public Task<long?> VerifyJournalAsync(CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(DecisionJournal.FirstBrokenRow, cancellation);
+
+    private static void LogQuarantineEvent(SqliteConnection connection, SqliteTransaction transaction, long id, DateTime utc, string action)
+    {
+        using SqliteCommand read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = "SELECT original_path_enc, stored_path_enc, size FROM quarantine WHERE id = $id";
+        read.Parameters.AddWithValue("$id", id);
+        using SqliteDataReader r = read.ExecuteReader();
+        if (!r.Read()) return;
+        string original = System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(0)), stored = System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(1));
+        long size = r.GetInt64(2);
+        r.Close();
+        DecisionJournal.Append(connection, transaction, utc, new("user", "manual", "quarantine", original, size, "quarantine", [], action, "Done", stored));
+    }
 }

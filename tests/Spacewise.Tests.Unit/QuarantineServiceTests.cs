@@ -170,4 +170,34 @@ public sealed class QuarantineServiceTests : IDisposable
             Assert.Equal([@"C:\T\bad"], (await store.HeldAsync(Ct)).Select(f => f.OriginalPath));
         }
     }
+
+    [Fact]
+    public async Task Decision_journal_chain_covers_execution_restore_and_purge_and_is_intact()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T", @"C:\Q", 5), (@"C:\Tusy", @"C:\Q", 7));
+        await using (writer)
+        {
+            var service = new QuarantineService(store, new FakePurger(_ => RemoveStatus.Removed), new FakeRestorer(), new FakeSpace(() => 1), new Clock(Now));
+            await service.RestoreAllAsync(Ct);
+            await service.PurgeAllAsync(Ct);
+            long rows = await writer.ExecuteAsync(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT count(*) FROM decision_journal"; return (long)cmd.ExecuteScalar()!; }, Ct);
+            Assert.Equal(4, rows);
+            Assert.Null(await store.VerifyJournalAsync(Ct));
+        }
+    }
+
+    [Theory]
+    [InlineData("UPDATE decision_journal SET bytes = 999 WHERE id = 2")]
+    [InlineData("UPDATE decision_journal SET user_action = 'reject' WHERE id = 1")]
+    [InlineData("DELETE FROM decision_journal WHERE id = 1")]
+    public async Task Decision_journal_detects_edited_or_removed_rows(string sql)
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T", @"C:\Q", 5), (@"C:\T", @"C:\Q", 7));
+        await using (writer)
+        {
+            Assert.Null(await store.VerifyJournalAsync(Ct));
+            await writer.ExecuteAsync(c => { using var cmd = c.CreateCommand(); cmd.CommandText = sql; return cmd.ExecuteNonQuery(); }, Ct);
+            Assert.NotNull(await store.VerifyJournalAsync(Ct));
+        }
+    }
 }

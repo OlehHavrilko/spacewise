@@ -18,11 +18,13 @@ public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
 {
     public RulePreview Preview { get; } = preview;
     public bool CanSelect { get; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0;
-    [ObservableProperty] public partial bool IsSelected { get; set; } = preview.Rule is { Action: "delete", RequiresAdmin: false } && preview.Items.Count > 0;
+    // FR-UI-004: nothing is preselected; the user picks categories.
+    [ObservableProperty] public partial bool IsSelected { get; set; }
     public string Title => Preview.Rule.TitleRu;
     public string Files => DisplayFormat.Count(Preview.Items.Count);
     public string Estimate => DisplayFormat.Size(Preview.LogicalBytes);
     public string SideEffects => Preview.Rule.SideEffectsRu;
+    public string Explanation => RuleExplainer.Explain(Preview);
     public string Consequence => Preview.Rule.Consequence switch
     {
         Spacewise.Catalog.Consequence.Regenerated => "Создастся заново",
@@ -146,7 +148,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         get
         {
             CleanupRow[] chosen = [.. Cleanup.Where(r => r.IsSelected)];
-            return Cleanup.Count == 0 ? "" : $"Выбрано категорий: {DisplayFormat.Count(chosen.Length)} из {DisplayFormat.Count(Cleanup.Count)}, "
+            return Cleanup.Count == 0 ? "" : chosen.Length == 0 ? "Отметьте категории, которые нужно очистить" : $"Выбрано категорий: {DisplayFormat.Count(chosen.Length)} из {DisplayFormat.Count(Cleanup.Count)}, "
                 + $"оценка {DisplayFormat.Size(chosen.Sum(r => r.Preview.LogicalBytes))}";
         }
     }

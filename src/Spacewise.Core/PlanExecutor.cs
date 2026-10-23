@@ -2,12 +2,24 @@ namespace Spacewise.Core;
 
 public enum RemoveStatus { Removed, Gone, Changed, Locked, Unsafe, Failed }
 
-public sealed record RemoveResult(RemoveStatus Status, int Code = 0, string? StoredPath = null);
+public sealed record RemoveResult(RemoveStatus Status, int Code = 0, string? StoredPath = null, byte[]? Sha256 = null);
 
 // Platform side of deletion: must act on an object opened relative to a verified parent (spec §7.4), never on a bare path.
 public interface IFileRemover
 {
     RemoveResult Remove(PlanItem item);
+}
+
+// Permanent deletion of a file that already sits in quarantine; only ever applied to quarantine contents.
+public interface IQuarantinePurger
+{
+    RemoveResult Purge(string storedPath);
+}
+
+// Free bytes on the volume holding a path; null when unknown. Used to report measured, not estimated, gains.
+public interface IVolumeSpace
+{
+    long? FreeBytes(string path);
 }
 
 public sealed record RestoreResult(bool Restored, int Code = 0);
@@ -18,7 +30,7 @@ public interface IFileRestorer
     RestoreResult Restore(string storedPath, string originalPath);
 }
 
-public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0, string? StoredPath = null);
+public sealed record ItemOutcome(PlanItem Item, RemoveStatus Status, int Code = 0, string? StoredPath = null, byte[]? Sha256 = null);
 
 public sealed record ExecutionReport(IReadOnlyList<ItemOutcome> Outcomes, bool Cancelled)
 {
@@ -52,7 +64,7 @@ public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, Time
             {
                 result = new(RemoveStatus.Failed, e.HResult);
             }
-            outcomes.Add(new(item, result.Status, result.Code, result.StoredPath));
+            outcomes.Add(new(item, result.Status, result.Code, result.StoredPath, result.Sha256));
         }
         return new(outcomes, Cancelled: false);
     }

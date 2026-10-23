@@ -6,7 +6,7 @@ namespace Spacewise.Platform.Windows;
 
 // Reversible removal: the verified file is renamed into the quarantine directory through the same handle
 // (NtSetInformationFile, ADR 0002 step 4). Same volume only; across volumes the rename fails and nothing is deleted.
-public sealed unsafe partial class QuarantineFileRemover(string quarantineDirectory) : HandleFileRemover, IFileRestorer
+public sealed unsafe partial class QuarantineFileRemover(string quarantineDirectory) : HandleFileRemover, IFileRestorer, IQuarantinePurger
 {
     private const uint AddFile = 0x2;
     private const uint RenamePosix = 0x2;
@@ -29,8 +29,31 @@ public sealed unsafe partial class QuarantineFileRemover(string quarantineDirect
 
         string stored = Guid.NewGuid().ToString("N");
         int status = Rename(child, target, stored);
-        if (status == 0) return new(RemoveStatus.Removed, 0, Path.Combine(quarantineDirectory, stored));
+        if (status == 0)
+        {
+            string storedPath = Path.Combine(quarantineDirectory, stored);
+            return new(RemoveStatus.Removed, 0, storedPath, Hash(storedPath));
+        }
         return new(status == StatusObjectNameNotFound ? RemoveStatus.Gone : RemoveStatus.Failed, (int)RtlNtStatusToDosError(status));
+    }
+
+    // Hash of the content as quarantined (spec §8). Null when it cannot be read; the move itself already succeeded.
+    private static byte[]? Hash(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return System.Security.Cryptography.SHA256.HashData(stream);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    // Irreversible. Refuses anything that is not a direct child of the quarantine directory.
+    public RemoveResult Purge(string storedPath)
+    {
+        if (!string.Equals(Path.GetDirectoryName(storedPath), Path.TrimEndingDirectorySeparator(quarantineDirectory), StringComparison.OrdinalIgnoreCase))
+            return new(RemoveStatus.Unsafe);
+        return OpenAndAct(storedPath, DeleteByHandle);
     }
 
     // Puts a quarantined file back under its original name. Never replaces an existing file.

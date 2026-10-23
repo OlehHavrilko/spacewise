@@ -9,7 +9,7 @@ public sealed class ExecutionStore(DatabaseWriter journal)
 {
     public static readonly TimeSpan DefaultQuarantineRetention = TimeSpan.FromDays(30);
 
-    // Quarantined items get a row with both paths so they can be restored; sha256 is filled later, not at move time.
+    // Quarantined items get a row with both paths so they can be restored; sha256 comes from the remover (null if unreadable).
     public Task RecordAsync(long planId, ExecutionReport report, DateTime completedUtc, TimeSpan? quarantineRetention = null,
         CancellationToken cancellation = default) =>
         journal.ExecuteAsync(connection =>
@@ -18,8 +18,8 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             using SqliteCommand item = connection.CreateCommand(), action = connection.CreateCommand(), plan = connection.CreateCommand(), hold = connection.CreateCommand();
             item.Transaction = action.Transaction = plan.Transaction = hold.Transaction = transaction;
             hold.CommandText = """
-                INSERT INTO quarantine(plan_id, seq, original_path_enc, stored_path_enc, size, created_utc, expires_utc)
-                VALUES($plan, $seq, $original, $stored, $size, $at, $expires)
+                INSERT INTO quarantine(plan_id, seq, original_path_enc, stored_path_enc, sha256, size, created_utc, expires_utc)
+                VALUES($plan, $seq, $original, $stored, $sha, $size, $at, $expires)
                 """;
             string expires = (completedUtc + (quarantineRetention ?? DefaultQuarantineRetention)).ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
             item.CommandText = "UPDATE plan_items SET state = $state, skip_reason = $reason WHERE plan_id = $plan AND seq = $seq";
@@ -56,6 +56,7 @@ public sealed class ExecutionStore(DatabaseWriter journal)
                     hold.Parameters.AddWithValue("$seq", seq - 1);
                     hold.Parameters.AddWithValue("$original", System.Text.Encoding.UTF8.GetBytes(outcome.Item.Path));
                     hold.Parameters.AddWithValue("$stored", System.Text.Encoding.UTF8.GetBytes(stored));
+                    hold.Parameters.AddWithValue("$sha", (object?)outcome.Sha256 ?? DBNull.Value);
                     hold.Parameters.AddWithValue("$size", outcome.Item.ExpectedSize);
                     hold.Parameters.AddWithValue("$at", at);
                     hold.Parameters.AddWithValue("$expires", expires);
@@ -69,19 +70,21 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             return 0;
         }, cancellation);
 
-    public sealed record QuarantinedFile(long Id, string OriginalPath, string StoredPath, long Size);
+    public sealed record QuarantinedFile(long Id, string OriginalPath, string StoredPath, long Size, DateTime ExpiresUtc, byte[]? Sha256);
 
     // Everything still held in quarantine: not restored, not purged. Works across sessions.
     public Task<IReadOnlyList<QuarantinedFile>> HeldAsync(CancellationToken cancellation = default) =>
         journal.ExecuteAsync<IReadOnlyList<QuarantinedFile>>(connection =>
         {
             using SqliteCommand query = connection.CreateCommand();
-            query.CommandText = "SELECT id, original_path_enc, stored_path_enc, size FROM quarantine WHERE restored_utc IS NULL AND purged_utc IS NULL ORDER BY id";
+            query.CommandText = "SELECT id, original_path_enc, stored_path_enc, size, expires_utc, sha256 FROM quarantine WHERE restored_utc IS NULL AND purged_utc IS NULL ORDER BY id";
             using SqliteDataReader r = query.ExecuteReader();
             var list = new List<QuarantinedFile>();
             while (r.Read())
                 list.Add(new(r.GetInt64(0), System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(1)),
-                    System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(2)), r.GetInt64(3)));
+                    System.Text.Encoding.UTF8.GetString((byte[])r.GetValue(2)), r.GetInt64(3),
+                    DateTime.Parse(r.GetString(4), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime(),
+                    r.IsDBNull(5) ? null : (byte[])r.GetValue(5)));
             return list;
         }, cancellation);
 
@@ -93,5 +96,25 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             update.Parameters.AddWithValue("$at", restoredUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             update.Parameters.AddWithValue("$id", quarantineId);
             return update.ExecuteNonQuery();
+        }, cancellation);
+
+    public Task MarkPurgedAsync(long quarantineId, DateTime purgedUtc, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(connection =>
+        {
+            using SqliteCommand update = connection.CreateCommand();
+            update.CommandText = "UPDATE quarantine SET purged_utc = $at WHERE id = $id";
+            update.Parameters.AddWithValue("$at", purgedUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            update.Parameters.AddWithValue("$id", quarantineId);
+            return update.ExecuteNonQuery();
+        }, cancellation);
+
+    public Task SaveSettingAsync(string key, string valueJson, CancellationToken cancellation = default) =>
+        journal.ExecuteAsync(connection =>
+        {
+            using SqliteCommand upsert = connection.CreateCommand();
+            upsert.CommandText = "INSERT INTO settings(key, value_json) VALUES($key, $value) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json";
+            upsert.Parameters.AddWithValue("$key", key);
+            upsert.Parameters.AddWithValue("$value", valueJson);
+            return upsert.ExecuteNonQuery();
         }, cancellation);
 }

@@ -10,6 +10,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = this.model = model;
         Closing += (_, _) => model.ScanCommand.Cancel();
+        Loaded += async (_, _) => await model.InitializeAsync();
     }
     // The folder dialog is a view concern; the result goes straight into the bound path.
     private void Browse_Click(object sender, RoutedEventArgs e)

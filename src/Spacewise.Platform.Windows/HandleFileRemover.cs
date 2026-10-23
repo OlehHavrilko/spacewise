@@ -53,10 +53,13 @@ public unsafe partial class HandleFileRemover : IFileRemover
     [LibraryImport("ntdll.dll")]
     protected static partial uint RtlNtStatusToDosError(int status);
 
-    public RemoveResult Remove(PlanItem item)
+    public RemoveResult Remove(PlanItem item) => OpenAndAct(item.Path, child => Process(child, item));
+
+    // Opens the file relative to a verified parent handle and hands the handle to `act`.
+    protected RemoveResult OpenAndAct(string path, Func<SafeFileHandle, RemoveResult> act)
     {
         if (!OperatingSystem.IsWindows()) return new(RemoveStatus.Failed);
-        string? parentPath = Path.GetDirectoryName(item.Path), name = Path.GetFileName(item.Path);
+        string? parentPath = Path.GetDirectoryName(path), name = Path.GetFileName(path);
         if (string.IsNullOrEmpty(parentPath) || string.IsNullOrEmpty(name)) return new(RemoveStatus.Unsafe);
 
         using SafeFileHandle parent = CreateFile(@"\\?\" + parentPath, ListDirectory | ReadAttributes | Synchronize, ShareAll, 0,
@@ -87,7 +90,7 @@ public unsafe partial class HandleFileRemover : IFileRemover
                     : status == StatusSharingViolation ? RemoveStatus.Locked : RemoveStatus.Failed, code);
             }
             using var child = new SafeFileHandle(raw, ownsHandle: true);
-            return Process(child, item);
+            return act(child);
         }
     }
 
@@ -105,7 +108,9 @@ public unsafe partial class HandleFileRemover : IFileRemover
     }
 
     // The child is verified against the plan; subclasses decide what happens to it.
-    protected virtual RemoveResult Act(SafeFileHandle child, PlanItem item)
+    protected virtual RemoveResult Act(SafeFileHandle child, PlanItem item) => DeleteByHandle(child);
+
+    protected static RemoveResult DeleteByHandle(SafeFileHandle child)
     {
         // IGNORE_READONLY: without it a read-only file is ACCESS_DENIED (ADR 0002, step 3).
         uint* info = stackalloc uint[1];

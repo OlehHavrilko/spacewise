@@ -40,11 +40,12 @@ tests/Spacewise.Tests.Fs/Mount-NtfsFixture.ps1 -Path D:\fixtures\spacewise.vhdx 
 
 ```text
 Spacewise.slnx, global.json, Directory.Build.props, Directory.Packages.props
-src/Spacewise.Core/          контракты, запрещающая политика, IScanService, форматирование; без Win32
+src/Spacewise.Core/          контракты, запрещающая политика, защищённые пути, IScanService, форматирование; без Win32
+src/Spacewise.Catalog/       встроенный каталог правил очистки, загрузчик с проверкой, glob, preview без удаления
 src/Spacewise.Data/          SQLite3MC: cache.db/journal.db, миграции с бэкапом, единый writer, ScanStore
-src/Spacewise.Platform.Windows/  сканер метаданных, P/Invoke (allocated size, FileId, links), ключ БД под DPAPI
+src/Spacewise.Platform.Windows/  сканер метаданных, P/Invoke (allocated size, FileId, links), ключ БД под DPAPI, Restart Manager
 src/Spacewise.Desktop/       окно WPF (только анализ): Generic Host, MVVM
-tests/Spacewise.Tests.Unit/  xUnit v3: форматирование, политика путей, ScanService, хранилище, архитектурные правила
+tests/Spacewise.Tests.Unit/  xUnit v3: форматирование, политика и защищённые пути, ScanService, хранилище, каталог и fixture правил, архитектурные правила
 tests/Spacewise.Tests.Fs/    xUnit v3: сканер на реальной ФС, NTFS-фикстуры, скрипт VHDX
 docs/                        концепция, ТЗ, решения, исследования
 ```

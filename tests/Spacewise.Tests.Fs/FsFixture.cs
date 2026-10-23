@@ -46,6 +46,19 @@ public sealed class FsFixture : IDisposable
         return path;
     }
 
+    // Junction (mount point) needs no privilege; Directory.Delete on it removes only the link.
+    public string Junction(string relative, string target)
+    {
+        string path = Path.Combine(Root, relative);
+        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", ["/c", "mklink", "/J", path, target])
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!;
+        mklink.StandardOutput.ReadToEnd();
+        mklink.WaitForExit();
+        if (mklink.ExitCode != 0 || !Directory.Exists(path)) throw new IOException("mklink /J failed: " + path);
+        created.Add((path, true));
+        return path;
+    }
+
     // Sparse file with no allocated ranges: large logical size, near-zero size on disk.
     public string SparseFile(string relative, long length)
     {

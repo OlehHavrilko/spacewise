@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Spacewise.Catalog/Spacewise.Catalog.csproj" />
     <Project Path="src/Spacewise.Core/Spacewise.Core.csproj" />
     <Project Path="src/Spacewise.Data/Spacewise.Data.csproj" />
     <Project Path="src/Spacewise.Desktop/Spacewise.Desktop.csproj" />

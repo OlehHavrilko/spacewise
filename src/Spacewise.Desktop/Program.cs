@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Spacewise.Catalog;
 using Spacewise.Core;
 using Spacewise.Data;
 using Spacewise.Platform.Windows;
@@ -22,6 +23,8 @@ public static class Program
         builder.Services.AddSingleton(sp => new DatabaseWriter(
             SqliteDatabase.Open(System.IO.Path.Combine(data, "cache.db"), Schemas.Cache, sp.GetRequiredService<IDatabaseKeySource>()).Connection));
         builder.Services.AddSingleton<ScanStore>();
+        builder.Services.AddSingleton(_ => new CleanupPreviewer(CatalogLoader.LoadBuiltIn(), new FileSystemTree(),
+            UserFolders.FromEnvironment(), TimeProvider.System, new ProcessList(), new RestartManager()));
         builder.Services.AddTransient<MainViewModel>();
         builder.Services.AddTransient<MainWindow>();
         using IHost host = builder.Build();

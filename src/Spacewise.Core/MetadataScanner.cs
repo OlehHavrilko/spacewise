@@ -1,9 +1,21 @@
 using System.Diagnostics;
+using System.IO.Enumeration;
 
 namespace Spacewise.Core;
 
 public sealed class MetadataScanner : IScanner
 {
+    // Attributes and length come from the enumeration buffer (FR-SCAN-001): no per-entry syscalls.
+    private readonly record struct Entry(string Path, FileAttributes Attributes, long Length);
+    private static readonly EnumerationOptions Options = new()
+    {
+        RecurseSubdirectories = false, AttributesToSkip = 0, IgnoreInaccessible = false,
+        ReturnSpecialDirectories = false, BufferSize = 65536,
+    };
+    private static IEnumerator<Entry> Enumerate(string path) => new FileSystemEnumerable<Entry>(path,
+        (ref FileSystemEntry e) => new Entry(e.ToFullPath(), e.Attributes, e.Length), Options).GetEnumerator();
+    private const int TopCount = 100;
+
     public Task<ScanResult> ScanAsync(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation)
         => Task.Run(() => Scan(request, progress, cancellation));
 
@@ -19,10 +31,11 @@ public sealed class MetadataScanner : IScanner
         string[] excluded = request.Exclusions.Where(x => !string.IsNullOrWhiteSpace(x)).Select(ScanPaths.Normalize).ToArray();
         var diagnostics = new List<string>();
         var top = new PriorityQueue<FileFinding, long>();
-        var stack = new Stack<(string Path, IEnumerator<string> Entries)>();
+        var stack = new Stack<(string Path, IEnumerator<Entry> Entries)>();
         long files = 0, bytes = 0, skipped = 0, errors = 0;
         long skippedByPolicy = 0, unvisitedDirectories = 0;
         ScanState state = ScanState.Completed;
+        bool stoppedEarly = false;
         var clock = Stopwatch.StartNew();
         void Problem(string path, Exception ex)
         {
@@ -39,28 +52,36 @@ public sealed class MetadataScanner : IScanner
                     throw new ArgumentException("Корень и его родители не должны быть ссылками, Offline или cloud-recall объектами.");
         }
         void PolicySkip() { skipped++; skippedByPolicy++; }
-        void PushDirectory(string path)
+        void PushDirectory(string path, FileAttributes attributes)
         {
-            if (MetadataScanPolicy.ShouldSkip(File.GetAttributes(path))) { PolicySkip(); return; }
+            if (MetadataScanPolicy.ShouldSkip(attributes)) { PolicySkip(); return; }
             if (stack.Count >= request.MaximumDirectoryDepth)
             {
                 skipped++; unvisitedDirectories++; state = ScanState.Partial;
                 if (diagnostics.Count < 50) diagnostics.Add($"Лимит глубины: каталог не проверен: {path}");
                 return;
             }
-            stack.Push((path, Directory.EnumerateFileSystemEntries(path).GetEnumerator()));
+            stack.Push((path, Enumerate(path)));
         }
         try
         {
             cancellation.ThrowIfCancellationRequested();
+            FileAttributes rootAttributes;
+            try { rootAttributes = File.GetAttributes(root); }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                state = ScanState.RootNotFound;
+                diagnostics.Add($"Папка не найдена: {root}");
+                goto Finished;
+            }
             CheckAncestors();
             if (ScanPaths.IsExcluded(root, excluded)) PolicySkip();
-            else PushDirectory(root);
+            else PushDirectory(root, rootAttributes);
             while (stack.Count > 0)
             {
                 cancellation.ThrowIfCancellationRequested();
                 var frame = stack.Peek();
-                string? path;
+                Entry entry;
                 try
                 {
                     if (!frame.Entries.MoveNext())
@@ -68,33 +89,33 @@ public sealed class MetadataScanner : IScanner
                         stack.Pop().Entries.Dispose();
                         continue;
                     }
-                    path = frame.Entries.Current;
+                    entry = frame.Entries.Current;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     Problem(frame.Path, ex); stack.Pop().Entries.Dispose(); continue;
                 }
                 cancellation.ThrowIfCancellationRequested();
+                string path = entry.Path;
                 if (ScanPaths.IsExcluded(path, excluded)) { PolicySkip(); continue; }
                 try
                 {
-                    FileAttributes attrs = File.GetAttributes(path);
-                    if (MetadataScanPolicy.ShouldSkip(attrs)) { PolicySkip(); continue; }
-                    if ((attrs & FileAttributes.Directory) != 0) PushDirectory(path);
+                    if (MetadataScanPolicy.ShouldSkip(entry.Attributes)) { PolicySkip(); continue; }
+                    if ((entry.Attributes & FileAttributes.Directory) != 0) PushDirectory(path, entry.Attributes);
                     else
                     {
                         // Only an additional eligible file proves a file-limit coverage gap.
                         if (files >= request.MaximumFiles)
                         {
-                            state = ScanState.Partial;
+                            state = ScanState.Partial; stoppedEarly = true;
                             diagnostics.Add("Достигнут лимит файлов; остались непроверенные файлы.");
                             goto Finished;
                         }
-                        long length = new FileInfo(path).Length;
+                        long length = entry.Length;
                         bytes = checked(bytes + length);
                         files++;
                         top.Enqueue(new FileFinding(path, length), length);
-                        if (top.Count > 100) top.Dequeue();
+                        if (top.Count > TopCount) top.Dequeue();
                     }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Problem(path, ex); }
@@ -105,15 +126,17 @@ public sealed class MetadataScanner : IScanner
                 }
             }
         }
-        catch (OperationCanceledException) { state = ScanState.Cancelled; }
+        catch (OperationCanceledException) { state = ScanState.Cancelled; stoppedEarly = true; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OverflowException)
         { Problem(root, ex); state = ScanState.Failed; }
         finally { while (stack.Count > 0) stack.Pop().Entries.Dispose(); }
     Finished:
         if (state == ScanState.Completed && errors > 0) state = ScanState.Partial;
         progress?.Report(new(files, bytes, skipped, errors));
-        return new(Guid.NewGuid(), root, state, files, bytes, skipped, errors,
-            top.UnorderedItems.Select(x => x.Element).OrderByDescending(x => x.LogicalBytes).ToArray(), diagnostics)
-        { SkippedByPolicy = skippedByPolicy, UnvisitedDirectories = unvisitedDirectories };
+        // One handle query per top-N file only; skipped after cancellation to keep Stop fast.
+        IEnumerable<FileFinding> largest = top.UnorderedItems.Select(x => x.Element).OrderByDescending(x => x.LogicalBytes);
+        if (state != ScanState.Cancelled) largest = largest.Select(FileMetadata.Enrich);
+        return new(Guid.NewGuid(), root, state, files, bytes, skipped, errors, largest.ToArray(), diagnostics)
+        { SkippedByPolicy = skippedByPolicy, UnvisitedDirectories = unvisitedDirectories, StoppedEarly = stoppedEarly };
     }
 }

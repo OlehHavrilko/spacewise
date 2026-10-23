@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Spacewise.Core;
 
 string fixture = Path.Combine(Path.GetTempPath(), "SpacewiseSmoke-" + Guid.NewGuid().ToString("N"));
@@ -17,7 +18,7 @@ try
         var omitted = await scanner.ScanAsync(new(fixture, [Path.Combine(fixture, "excluded")]), null, default);
         Check(omitted.State == ScanState.Completed, "intentional exclusion should complete selected scope");
         var regressionMissing = await scanner.ScanAsync(new(Path.Combine(fixture, "missing"), []), null, default);
-        Check(regressionMissing.State == ScanState.Failed && !regressionMissing.Diagnostics.Any(x => x.Contains("Корень и его родители")), "missing root should report not found, not a link");
+        Check(regressionMissing.State == ScanState.RootNotFound && !regressionMissing.Diagnostics.Any(x => x.Contains("Корень и его родители")), "missing root should report not found, not a link");
         var caseExcluded = await scanner.ScanAsync(new(fixture, [Path.Combine(fixture, "excluded").ToUpperInvariant()]), null, default);
         Check(caseExcluded.Files == 1, "Windows exclusion accepts alternate casing");
         var trailing = await scanner.ScanAsync(new(fixture, [fixture + Path.DirectorySeparatorChar]), null, default);
@@ -45,10 +46,29 @@ try
     Assert(filtered.Files == 1 && filtered.LogicalBytes == 17 && filtered.SkippedByPolicy == 1 && filtered.State == ScanState.Completed, "exclusion completes selected scope");
     using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
     var stopped = await scanner.ScanAsync(new(fixture, []), null, cancelled.Token);
-    Assert(stopped.State == ScanState.Cancelled && stopped.Files == 0, "pre-cancelled scan");
+    Assert(stopped.State == ScanState.Cancelled && stopped.Files == 0 && stopped.StoppedEarly, "pre-cancelled scan");
     var limited = await scanner.ScanAsync(new(fixture, [], 1), null, default);
-    Assert(limited.State == ScanState.Partial && limited.Files == 1, "bounded scan");
-    Assert(all.LargestFiles.All(x => x.AllocatedBytes == null), "physical allocation is unknown");
+    Assert(limited.State == ScanState.Partial && limited.Files == 1 && limited.StoppedEarly, "bounded scan");
+    Assert(!all.StoppedEarly && all.ExcludedByPolicy == 0 && all.Inaccessible == 0, "complete scan has empty coverage buckets");
+    Assert(all.LargestFiles.All(x => x.AllocatedBytes >= 0 && x.Links == 1 && x.Identity != null),
+        "top-N files carry allocated size, link count and file ID");
+    Assert(all.LargestFiles.Select(x => x.Identity).Distinct().Count() == 2, "distinct files have distinct IDs");
+    string link = Path.Combine(fixture, "link.bin");
+    Assert(CreateHardLinkW(link, Path.Combine(fixture, "keep.bin"), IntPtr.Zero), "hard link fixture created");
+    try
+    {
+        var linked = await scanner.ScanAsync(new(fixture, []), null, default);
+        var pair = linked.LargestFiles.Where(x => x.LogicalBytes == 17).ToArray();
+        Assert(pair.Length == 2 && pair.All(x => x.IsHardLinked && x.Links == 2) && pair[0].Identity == pair[1].Identity,
+            "hard link names share one ID and are marked");
+    }
+    finally { File.Delete(link); }
+    Assert(DisplayFormat.Size(17) == "17\u00A0байт" && DisplayFormat.Size(1023) == "1\u202F023\u00A0байт", "bytes below 1 KB");
+    Assert(DisplayFormat.Size(5_153_960_755) == "4,8\u00A0ГБ" && DisplayFormat.Size(214L << 30) == "214\u00A0ГБ"
+        && DisplayFormat.Size(1024) == "1,0\u00A0КБ", "binary units, decimal comma, integers from 100");
+    Assert(DisplayFormat.Size(1_048_575) == "1,0\u00A0МБ" && DisplayFormat.Size(102_348) == "99,9\u00A0КБ"
+        && DisplayFormat.Size(102_349) == "100\u00A0КБ", "unit promotion and 100 boundary");
+    Assert(DisplayFormat.Count(12_840) == "12\u202F840" && DisplayFormat.Count(0) == "0", "narrow-space thousands");
     Assert(!ReadOnlyPolicy.EvaluateMutation().Allowed && !new DisabledLocalAssistant().IsAvailable, "mutations denied and model disabled");
     var session = new ScanSession(); session.Start();
     bool rejected = false; try { session.Start(); } catch (InvalidOperationException) { rejected = true; }
@@ -70,7 +90,8 @@ try
     var exact = await scanner.ScanAsync(new(fixture, [], 2), null, default);
     Assert(exact.State == ScanState.Completed && exact.Files == 2, "exact file limit is complete");
     var missing = await scanner.ScanAsync(new(Path.Combine(fixture, "missing"), []), null, default);
-    Assert(missing.State == ScanState.Failed && missing.Errors == 1 && !missing.Diagnostics.Any(x => x.Contains("Корень и его родители")), "missing root reports not found");
+    Assert(missing.State == ScanState.RootNotFound && missing.Errors == 0 && missing.Diagnostics.Any(x => x.Contains("не найдена"))
+        && !missing.Diagnostics.Any(x => x.Contains("Корень и его родители")), "missing root reports RootNotFound");
     var alternateCase = await scanner.ScanAsync(new(fixture, [Path.Combine(fixture, "excluded").ToUpperInvariant()]), null, default);
     Assert(alternateCase.Files == 1 && alternateCase.State == ScanState.Completed, "case-insensitive exclusion policy");
     var rootExcluded = await scanner.ScanAsync(new(fixture, [fixture + Path.DirectorySeparatorChar]), null, default);
@@ -102,3 +123,6 @@ finally
     Directory.Delete(Path.Combine(fixture, "excluded"));
     Directory.Delete(fixture);
 }
+
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+static extern bool CreateHardLinkW(string link, string existing, IntPtr security);

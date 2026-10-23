@@ -1,15 +1,27 @@
 namespace Spacewise.Core;
 
-public enum ScanState { Idle, Scanning, Completed, Partial, Cancelled, Failed }
+public enum ScanState { Idle, Scanning, Completed, Partial, Cancelled, Failed, RootNotFound }
 public sealed record ScanRequest(string Root, IReadOnlyList<string> Exclusions, int MaximumFiles = 500_000,
     int MaximumDirectoryDepth = 256);
 public sealed record ScanProgress(long Files, long LogicalBytes, long Skipped, long Errors);
-public sealed record FileFinding(string Path, long LogicalBytes, long? AllocatedBytes = null);
+// Volume serial plus 128-bit NTFS/ReFS file ID; equal identities are the same file (hard links).
+public readonly record struct FileIdentity(ulong VolumeSerial, UInt128 FileId);
+public sealed record FileFinding(string Path, long LogicalBytes, long? AllocatedBytes = null,
+    FileIdentity? Identity = null, int? Links = null)
+{
+    // Removing one name of a multiply linked file frees no space.
+    public bool IsHardLinked => Links > 1;
+}
 public sealed record ScanResult(Guid ScanId, string Root, ScanState State, long Files, long LogicalBytes,
     long Skipped, long Errors, IReadOnlyList<FileFinding> LargestFiles, IReadOnlyList<string> Diagnostics)
 {
     public long SkippedByPolicy { get; init; }
     public long UnvisitedDirectories { get; init; }
+    // Cancellation or the file limit left an unknown remainder unvisited.
+    public bool StoppedEarly { get; init; }
+    // Coverage buckets (FR-SCAN-002): excluded by rules, inaccessible (ACL/IO), not scanned.
+    public long ExcludedByPolicy => SkippedByPolicy;
+    public long Inaccessible => Errors;
 }
 
 public interface IScanner

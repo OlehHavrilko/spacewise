@@ -73,6 +73,19 @@ try
     var session = new ScanSession(); session.Start();
     bool rejected = false; try { session.Start(); } catch (InvalidOperationException) { rejected = true; }
     Assert(rejected, "parallel scan rejected"); session.Finish(ScanState.Completed);
+    var gate = new TaskCompletionSource<ScanResult>();
+    var service = new ScanService(new GatedScanner(gate.Task));
+    var running = service.ScanAsync(new(fixture, []), null, default);
+    bool serviceRejected = false;
+    try { await service.ScanAsync(new(fixture, []), null, default); } catch (InvalidOperationException) { serviceRejected = true; }
+    Assert(service.State == ScanState.Scanning && serviceRejected, "scan service rejects a second concurrent scan");
+    gate.SetResult(all);
+    Assert((await running).State == ScanState.Completed && service.State == ScanState.Completed, "scan service records final state");
+    var failing = new ScanService(new MetadataScanner());
+    bool threw = false;
+    try { await failing.ScanAsync(new("relative", []), null, default); } catch (ArgumentException) { threw = true; }
+    Assert(threw && failing.State == ScanState.Failed && (await failing.ScanAsync(new(fixture, []), null, default)).Files == 2,
+        "scan service recovers after a rejected request");
     Assert(File.ReadAllBytes(Path.Combine(fixture, "keep.bin")).Length == 17 && Directory.GetFiles(fixture, "*", SearchOption.AllDirectories).Length == 2, "scan preserved fixture files");
     Assert(new[] { FileAttributes.ReparsePoint, FileAttributes.Offline, (FileAttributes)0x40000, (FileAttributes)0x400000 }
         .All(MetadataScanPolicy.ShouldSkip), "each link/offline/cloud-recall flag is independently excluded");
@@ -126,3 +139,8 @@ finally
 
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 static extern bool CreateHardLinkW(string link, string existing, IntPtr security);
+
+sealed class GatedScanner(Task<ScanResult> result) : IScanner
+{
+    public Task<ScanResult> ScanAsync(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation) => result;
+}

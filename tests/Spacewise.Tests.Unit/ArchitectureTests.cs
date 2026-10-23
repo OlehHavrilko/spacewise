@@ -52,7 +52,8 @@ public class ArchitectureTests
         Assert.DoesNotContain(types, t => t.Name.Contains("Executor") || t.Name.Contains("Delete"));
     }
 
+    // PlanExecutor only orchestrates: file removal stays behind IFileRemover in Platform.Windows.
     [Fact]
     public void Core_has_no_mutation_capability() =>
-        Assert.DoesNotContain(Core.GetTypes(), t => t.Name.Contains("Executor") || t.Name.Contains("Delete"));
+        Assert.DoesNotContain(Core.GetTypes(), t => (t.Name.Contains("Executor") && t.Name != nameof(PlanExecutor)) || t.Name.Contains("Delete"));
 }

@@ -63,4 +63,151 @@
   <sys:String x:Key="Ui.062">Результат</sys:String>
   <sys:String x:Key="Ui.063">Файл</sys:String>
   <sys:String x:Key="Ui.064">Ограничения и ошибки</sys:String>
+  <sys:String x:Key="Common.Unavailable" xml:space="preserve">—</sys:String>
+  <sys:String x:Key="File.HardLink" xml:space="preserve">Жёсткая ссылка ({0}): 0 байт выгоды</sys:String>
+  <sys:String x:Key="Cleanup.Regenerated" xml:space="preserve">Создастся заново</sys:String>
+  <sys:String x:Key="Cleanup.Redownloaded" xml:space="preserve">Скачается заново</sys:String>
+  <sys:String x:Key="Cleanup.Permanent" xml:space="preserve">Удаляется безвозвратно</sys:String>
+  <sys:String x:Key="Cleanup.NoQuarantine" xml:space="preserve">удаляется окончательно, без карантина</sys:String>
+  <sys:String x:Key="Cleanup.AdminRequired" xml:space="preserve">нужны права администратора</sys:String>
+  <sys:String x:Key="Cleanup.SystemEstimate" xml:space="preserve">системный обработчик, пока только оценка</sys:String>
+  <sys:String x:Key="Cleanup.CloseRunning" xml:space="preserve">запущено, закройте: </sys:String>
+  <sys:String x:Key="Cleanup.LockedFiles" xml:space="preserve">файлы заняты: </sys:String>
+  <sys:String x:Key="Cleanup.MoreLocks" xml:space="preserve"> и ещё {0}</sys:String>
+  <sys:String x:Key="Cleanup.LockCoverage" xml:space="preserve">; проверено {0} из {1}</sys:String>
+  <sys:String x:Key="Cleanup.RecentSkipped" xml:space="preserve">свежих пропущено: {0}</sys:String>
+  <sys:String x:Key="Cleanup.ProtectedSkipped" xml:space="preserve">защищённых пропущено: {0}</sys:String>
+  <sys:String x:Key="Cleanup.DeferredSkipped" xml:space="preserve">ссылок и облачных пропущено: {0}</sys:String>
+  <sys:String x:Key="Usage.SteamGame" xml:space="preserve">Игра Steam</sys:String>
+  <sys:String x:Key="Usage.Program" xml:space="preserve">Программа</sys:String>
+  <sys:String x:Key="Usage.Heuristic" xml:space="preserve">Эвристика: только запуски через оболочку</sys:String>
+  <sys:String x:Key="Usage.Corroborated" xml:space="preserve">Подтверждено несколькими источниками</sys:String>
+  <sys:String x:Key="Usage.DirectEvidence" xml:space="preserve">Прямое свидетельство</sys:String>
+  <sys:String x:Key="Usage.NoEvidence" xml:space="preserve">Нет данных</sys:String>
+  <sys:String x:Key="Common.Approximate" xml:space="preserve">≈ </sys:String>
+  <sys:String x:Key="Scan.Limitations" xml:space="preserve">Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.</sys:String>
+  <sys:String x:Key="Scan.Ready" xml:space="preserve">Готов к проверке</sys:String>
+  <sys:String x:Key="Cleanup.NotEstimated" xml:space="preserve">Оценка не выполнялась</sys:String>
+  <sys:String x:Key="Scan.Running" xml:space="preserve">Анализ выполняется…</sys:String>
+  <sys:String x:Key="Scan.Progress" xml:space="preserve">Файлов: {0} · логически: {1} · пропуски: {2} · ошибки: {3}</sys:String>
+  <sys:String x:Key="Scan.RootNotFound" xml:space="preserve">Анализ не выполнен: папка не найдена — {0}</sys:String>
+  <sys:String x:Key="Scan.Summary" xml:space="preserve">{0} · файлов: {1} · логически: {2}</sys:String>
+  <sys:String x:Key="Scan.VolumeExplanation" xml:space="preserve">&#10;Это логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Модель отсутствует.&#10;</sys:String>
+  <sys:String x:Key="Scan.HistorySaveFailed" xml:space="preserve">&#10;История сканов не сохранена: {0}</sys:String>
+  <sys:String x:Key="Scan.Failed" xml:space="preserve">Проверка не выполнена</sys:String>
+  <sys:String x:Key="Scan.RootFiles" xml:space="preserve">(файлы в корне)</sys:String>
+  <sys:String x:Key="Scan.RootSummary" xml:space="preserve">{0} — {1}, файлов: {2}</sys:String>
+  <sys:String x:Key="Cleanup.Estimating" xml:space="preserve">Оценка выполняется…</sys:String>
+  <sys:String x:Key="Cleanup.NothingFound" xml:space="preserve">По правилам каталога ничего не найдено</sys:String>
+  <sys:String x:Key="Cleanup.EstimateSummary" xml:space="preserve">Оценка: {0} в {1} категориях. </sys:String>
+  <sys:String x:Key="Cleanup.EstimateExplanation" xml:space="preserve">Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Очистка переносит файлы в карантин.</sys:String>
+  <sys:String x:Key="Cleanup.EstimateStopped" xml:space="preserve">Оценка остановлена</sys:String>
+  <sys:String x:Key="Cleanup.EstimateFailed" xml:space="preserve">Оценка не выполнена: </sys:String>
+  <sys:String x:Key="Cleanup.SelectCategories" xml:space="preserve">Отметьте категории, которые нужно очистить</sys:String>
+  <sys:String x:Key="Cleanup.SelectionCount" xml:space="preserve">Выбрано категорий: {0} из {1}, </sys:String>
+  <sys:String x:Key="Cleanup.SelectionEstimate" xml:space="preserve">оценка {0}</sys:String>
+  <sys:String x:Key="Cleanup.Rejected" xml:space="preserve">Очистка отклонена: </sys:String>
+  <sys:String x:Key="Cleanup.NoFiles" xml:space="preserve">Очистка отклонена: в выбранных категориях нет файлов.</sys:String>
+  <sys:String x:Key="Cleanup.ConfirmFiles" xml:space="preserve">В карантин будет перемещено файлов: {0} (логически {1}). </sys:String>
+  <sys:String x:Key="Cleanup.ConfirmRetention" xml:space="preserve">Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. </sys:String>
+  <sys:String x:Key="Cleanup.ConfirmSkipped" xml:space="preserve">Занятые и изменённые после оценки файлы будут пропущены. Место на диске освободится после очистки карантина.&#10;&#10;</sys:String>
+  <sys:String x:Key="Cleanup.ConfirmBin" xml:space="preserve">Корзина будет очищена окончательно: объектов {0} (около {1}). </sys:String>
+  <sys:String x:Key="Cleanup.ConfirmBinPermanent" xml:space="preserve">Вернуть их будет нельзя, карантин для Корзины не применяется.&#10;&#10;</sys:String>
+  <sys:String x:Key="Common.Continue" xml:space="preserve">Продолжить?</sys:String>
+  <sys:String x:Key="Cleanup.Title" xml:space="preserve">Очистка</sys:String>
+  <sys:String x:Key="Cleanup.Cancelled" xml:space="preserve">Очистка отменена</sys:String>
+  <sys:String x:Key="Cleanup.Running" xml:space="preserve">Очистка выполняется…</sys:String>
+  <sys:String x:Key="Cleanup.Quarantined" xml:space="preserve">Перемещено в карантин: {0} файлов (оценка по логическим размерам: {1}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина</sys:String>
+  <sys:String x:Key="Cleanup.StoppedByUser" xml:space="preserve">; остановлено пользователем</sys:String>
+  <sys:String x:Key="Cleanup.Skipped" xml:space="preserve">; пропущено — </sys:String>
+  <sys:String x:Key="Cleanup.EstimateStale" xml:space="preserve">&#10;Оценка устарела, выполните её заново.</sys:String>
+  <sys:String x:Key="Cleanup.Failed" xml:space="preserve">Очистка не выполнена: </sys:String>
+  <sys:String x:Key="RecycleBin.Emptied" xml:space="preserve">Корзина очищена. </sys:String>
+  <sys:String x:Key="RecycleBin.Failed" xml:space="preserve">Корзину очистить не удалось: Windows отказала.</sys:String>
+  <sys:String x:Key="Skipped.Gone" xml:space="preserve">уже нет</sys:String>
+  <sys:String x:Key="Skipped.Changed" xml:space="preserve">изменены после оценки</sys:String>
+  <sys:String x:Key="Skipped.Locked" xml:space="preserve">заняты</sys:String>
+  <sys:String x:Key="Skipped.Unsafe" xml:space="preserve">отклонены защитой</sys:String>
+  <sys:String x:Key="Skipped.Interrupted" xml:space="preserve">прерваны</sys:String>
+  <sys:String x:Key="Skipped.Error" xml:space="preserve">ошибка</sys:String>
+  <sys:String x:Key="Recovery.Summary" xml:space="preserve">После прерванной очистки: не тронуто {0}, найдено в карантине {1}, неясно {2}. </sys:String>
+  <sys:String x:Key="Recovery.Unrecorded" xml:space="preserve">Неучтённых файлов в карантине: {0}. </sys:String>
+  <sys:String x:Key="Quarantine.Expired" xml:space="preserve">Удалено по сроку хранения: {0}. </sys:String>
+  <sys:String x:Key="Quarantine.Unavailable" xml:space="preserve">Карантин недоступен: </sys:String>
+  <sys:String x:Key="Quarantine.Empty" xml:space="preserve">Карантин пуст</sys:String>
+  <sys:String x:Key="Quarantine.Summary" xml:space="preserve">В карантине: {0} файлов, логически {1}; самый ранний срок хранения до {2:d}</sys:String>
+  <sys:String x:Key="Space.Unmeasured" xml:space="preserve">Оценка (логический размер): {0}. Освобождённое место измерить не удалось.</sys:String>
+  <sys:String x:Key="Space.Measured" xml:space="preserve">Освобождено на диске (измерено): {0}{1}. Оценка (логический размер): {2}.</sys:String>
+  <sys:String x:Key="Space.WhyDifferent" xml:space="preserve">&#10;Почему цифры отличаются: </sys:String>
+  <sys:String x:Key="Restore.Summary" xml:space="preserve">Возвращено: {0}</sys:String>
+  <sys:String x:Key="Restore.FailedItems" xml:space="preserve">; не удалось: {0} (на месте уже есть файл или карантин недоступен)</sys:String>
+  <sys:String x:Key="Restore.HashMismatch" xml:space="preserve">; не возвращено из-за несовпадения sha256: {0} (файл остался в карантине)</sys:String>
+  <sys:String x:Key="Restore.Failed" xml:space="preserve">Возврат не выполнен: </sys:String>
+  <sys:String x:Key="Quarantine.ConfirmPurge" xml:space="preserve">Окончательно удалить из карантина файлов: {0} (логически {1})?&#10;&#10;</sys:String>
+  <sys:String x:Key="Quarantine.PurgePermanent" xml:space="preserve">Вернуть их после этого будет нельзя.</sys:String>
+  <sys:String x:Key="Quarantine.PurgeTitle" xml:space="preserve">Очистка карантина</sys:String>
+  <sys:String x:Key="Quarantine.PurgeCancelled" xml:space="preserve">Очистка карантина отменена</sys:String>
+  <sys:String x:Key="Quarantine.Purged" xml:space="preserve">Удалено окончательно: {0}</sys:String>
+  <sys:String x:Key="Quarantine.PurgeFailedItems" xml:space="preserve">; не удалось: {0}</sys:String>
+  <sys:String x:Key="Quarantine.PurgeFailed" xml:space="preserve">Очистка карантина не выполнена: </sys:String>
+  <sys:String x:Key="History.EmptyBin" xml:space="preserve">Очистка Корзины (окончательно)</sys:String>
+  <sys:String x:Key="History.Restore" xml:space="preserve">Возврат из карантина</sys:String>
+  <sys:String x:Key="History.Purge" xml:space="preserve">Окончательное удаление из карантина</sys:String>
+  <sys:String x:Key="History.Cleanup" xml:space="preserve">Очистка (перенос в карантин)</sys:String>
+  <sys:String x:Key="Result.Removed" xml:space="preserve">Перенесён</sys:String>
+  <sys:String x:Key="Result.Gone" xml:space="preserve">Файла уже не было</sys:String>
+  <sys:String x:Key="Result.Changed" xml:space="preserve">Изменён после оценки, пропущен</sys:String>
+  <sys:String x:Key="Result.Locked" xml:space="preserve">Занят, пропущен</sys:String>
+  <sys:String x:Key="Result.Unsafe" xml:space="preserve">Отклонено защитой</sys:String>
+  <sys:String x:Key="Result.Failed" xml:space="preserve">Ошибка</sys:String>
+  <sys:String x:Key="Result.Interrupted" xml:space="preserve">Прервано</sys:String>
+  <sys:String x:Key="Result.Done" xml:space="preserve">Выполнено</sys:String>
+  <sys:String x:Key="History.Empty" xml:space="preserve">Журнал пока пуст</sys:String>
+  <sys:String x:Key="History.Recent" xml:space="preserve">Последние записи: {0}</sys:String>
+  <sys:String x:Key="History.ReadFailed" xml:space="preserve">Журнал не прочитан: </sys:String>
+  <sys:String x:Key="History.Verified" xml:space="preserve">Цепочка журнала цела: записи не менялись и не удалялись.</sys:String>
+  <sys:String x:Key="History.Broken" xml:space="preserve">Цепочка журнала нарушена, первая проблемная запись №{0}. Журнал могли править вне Spacewise.</sys:String>
+  <sys:String x:Key="History.VerifyFailed" xml:space="preserve">Проверка не выполнена: </sys:String>
+  <sys:String x:Key="Report.SaveTitle" xml:space="preserve">Сохранить отчёт</sys:String>
+  <sys:String x:Key="Report.Filter" xml:space="preserve">Markdown (*.md)|*.md</sys:String>
+  <sys:String x:Key="Report.PathsIncluded" xml:space="preserve">включены</sys:String>
+  <sys:String x:Key="Report.PathsHidden" xml:space="preserve">скрыты</sys:String>
+  <sys:String x:Key="Report.Saved" xml:space="preserve">Отчёт сохранён: записей {0}, пути {1}.</sys:String>
+  <sys:String x:Key="Report.Failed" xml:space="preserve">Отчёт не сохранён: </sys:String>
+  <sys:String x:Key="Diagnostics.SaveTitle" xml:space="preserve">Сохранить диагностический пакет</sys:String>
+  <sys:String x:Key="Diagnostics.Filter" xml:space="preserve">ZIP (*.zip)|*.zip</sys:String>
+  <sys:String x:Key="Diagnostics.Version" xml:space="preserve">Версия</sys:String>
+  <sys:String x:Key="Diagnostics.GeneratedUtc" xml:space="preserve">Сформирован (UTC)</sys:String>
+  <sys:String x:Key="Diagnostics.Saved" xml:space="preserve">Диагностический пакет сохранён: журналы работы и сведения о версии, без списка файлов.</sys:String>
+  <sys:String x:Key="Diagnostics.Failed" xml:space="preserve">Пакет не сохранён: </sys:String>
+  <sys:String x:Key="Forecast.NotEnoughData" xml:space="preserve">Данных пока мало: нужно не меньше {0} замеров за {1} дней</sys:String>
+  <sys:String x:Key="Forecast.NotShrinking" xml:space="preserve">Свободное место не убывает</sys:String>
+  <sys:String x:Key="Forecast.Expected" xml:space="preserve">Заполнится примерно {0:d} (через {1} дн.; </sys:String>
+  <sys:String x:Key="Forecast.Range" xml:space="preserve">от {0} до {1} дн.</sys:String>
+  <sys:String x:Key="Forecast.Minimum" xml:space="preserve">не раньше чем через {0} дн.</sys:String>
+  <sys:String x:Key="Disk.UsedPercent" xml:space="preserve">{0:0} %</sys:String>
+  <sys:String x:Key="Disk.None" xml:space="preserve">Фиксированные диски не найдены</sys:String>
+  <sys:String x:Key="Disk.Summary" xml:space="preserve">Дисков: {0}. Прогноз строится по замерам при запуске, ему нужно несколько дней.</sys:String>
+  <sys:String x:Key="Disk.Failed" xml:space="preserve">Диски не прочитаны: </sys:String>
+  <sys:String x:Key="History.EraseTitle" xml:space="preserve">Стереть историю</sys:String>
+  <sys:String x:Key="History.EraseConfirmation" xml:space="preserve">Будет удалена история замеров дисков, которую хранит Spacewise. Журнал Windows о запусках программ не затрагивается, журнал действий очистки тоже остаётся.&#10;&#10;Продолжить?</sys:String>
+  <sys:String x:Key="History.Erased" xml:space="preserve">История стёрта: замеров дисков удалено {0}. Данные использования Spacewise не хранит.</sys:String>
+  <sys:String x:Key="History.EraseFailed" xml:space="preserve">История не стёрта: </sys:String>
+  <sys:String x:Key="Usage.Instructions" xml:space="preserve">Нажмите «Прочитать использование»: данные берутся из журнала запусков Windows текущего пользователя.</sys:String>
+  <sys:String x:Key="Usage.Reading" xml:space="preserve">Чтение списка программ и журнала запусков…</sys:String>
+  <sys:String x:Key="Usage.Readable" xml:space="preserve">Программ: {0}. Источник: UserAssist (запуски через Пуск и Проводник); запуски другими способами он не видит.</sys:String>
+  <sys:String x:Key="Usage.Unreadable" xml:space="preserve">Программ: {0}. Журнал запусков прочитать не удалось: история неизвестна, а не «не используется».</sys:String>
+  <sys:String x:Key="Usage.Failed" xml:space="preserve">Не удалось прочитать использование: </sys:String>
+  <sys:String x:Key="Usage.NoneUnused" xml:space="preserve">Нет программ, для которых данных достаточно, чтобы сказать «не запускалась».</sys:String>
+  <sys:String x:Key="Usage.UnusedSummary" xml:space="preserve">{0} программ не запускались {1}+ дней · {2}</sys:String>
+  <sys:String x:Key="Usage.UnknownSizes" xml:space="preserve"> (размер неизвестен у {0})</sys:String>
+  <sys:String x:Key="Usage.NoUninstall" xml:space="preserve">. Это подсказка: удаление программ Spacewise не выполняет.</sys:String>
+  <sys:String x:Key="Scan.FolderCount" xml:space="preserve"> папок</sys:String>
+  <sys:String x:Key="Scan.StoppedRemainder" xml:space="preserve"> и остаток после остановки</sys:String>
+  <sys:String x:Key="Scan.Coverage" xml:space="preserve">Исключено правилами: {0} · Недоступно: {1} · Не досканировано: {2}</sys:String>
+  <sys:String x:Key="Scan.Completed" xml:space="preserve">Проверка завершена</sys:String>
+  <sys:String x:Key="Scan.Partial" xml:space="preserve">Проверка частичная</sys:String>
+  <sys:String x:Key="Scan.Cancelled" xml:space="preserve">Остановлено; показана проверенная часть</sys:String>
+  <sys:String x:Key="Scan.Error" xml:space="preserve">Ошибка проверки</sys:String>
+  <sys:String x:Key="Dialog.SelectFolder" xml:space="preserve">Выберите локальную папку для анализа</sys:String>
 </ResourceDictionary>

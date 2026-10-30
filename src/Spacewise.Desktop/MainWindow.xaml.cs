@@ -15,7 +15,7 @@ public partial class MainWindow : Window
     // The folder dialog is a view concern; the result goes straight into the bound path.
     private void Browse_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Выберите локальную папку для анализа" };
+        var dialog = new OpenFolderDialog { Title = Strings.Get("Dialog.SelectFolder") };
         if (dialog.ShowDialog(this) == true) model.RootPath = dialog.FolderName;
     }
 }

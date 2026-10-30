@@ -10,8 +10,8 @@ namespace Spacewise.Desktop;
 public sealed record FileRow(string Path, string Size, string OnDisk, string Note)
 {
     public static FileRow From(FileFinding f) => new(f.Path, DisplayFormat.Size(f.LogicalBytes),
-        f.AllocatedBytes is long a ? DisplayFormat.Size(a) : "—",
-        f.IsHardLinked ? $"Жёсткая ссылка ({f.Links}): 0 байт выгоды" : "");
+        f.AllocatedBytes is long a ? DisplayFormat.Size(a) : Strings.Get("Common.Unavailable"),
+        f.IsHardLinked ? Strings.Format("File.HardLink", f.Links) : "");
 }
 
 // One catalog rule in the cleanup estimate. Only rules the executor can run by file list are selectable.
@@ -29,9 +29,9 @@ public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
     public string Explanation => RuleExplainer.Explain(Preview);
     public string Consequence => Preview.Rule.Consequence switch
     {
-        Spacewise.Catalog.Consequence.Regenerated => "Создастся заново",
-        Spacewise.Catalog.Consequence.Redownloaded => "Скачается заново",
-        _ => "Удаляется безвозвратно",
+        Spacewise.Catalog.Consequence.Regenerated => Strings.Get("Cleanup.Regenerated"),
+        Spacewise.Catalog.Consequence.Redownloaded => Strings.Get("Cleanup.Redownloaded"),
+        _ => Strings.Get("Cleanup.Permanent"),
     };
     public string Note
     {
@@ -39,17 +39,17 @@ public sealed partial class CleanupRow(RulePreview preview) : ObservableObject
         {
             RulePreview p = Preview;
             var notes = new List<string>();
-            if (p.Rule.Action == SystemRules.RecycleBinAction) notes.Add("удаляется окончательно, без карантина");
-            else if (p.Rule.RequiresAdmin) notes.Add("нужны права администратора");
-            else if (p.Rule.Action != "delete" && p.Rule.Action != SystemRules.RecycleBinAction) notes.Add("системный обработчик, пока только оценка");
-            if (p.Running.Count > 0) notes.Add("запущено, закройте: " + string.Join(", ", p.Running));
+            if (p.Rule.Action == SystemRules.RecycleBinAction) notes.Add(Strings.Get("Cleanup.NoQuarantine"));
+            else if (p.Rule.RequiresAdmin) notes.Add(Strings.Get("Cleanup.AdminRequired"));
+            else if (p.Rule.Action != "delete" && p.Rule.Action != SystemRules.RecycleBinAction) notes.Add(Strings.Get("Cleanup.SystemEstimate"));
+            if (p.Running.Count > 0) notes.Add(Strings.Get("Cleanup.CloseRunning") + string.Join(", ", p.Running));
             if (p.LockedBy.Count > 0)
-                notes.Add("файлы заняты: " + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
-                    + (p.LockedBy.Count > 5 ? $" и ещё {p.LockedBy.Count - 5}" : "")
-                    + (p.LockChecked < p.Items.Count ? $"; проверено {DisplayFormat.Count(p.LockChecked)} из {DisplayFormat.Count(p.Items.Count)}" : ""));
-            if (p.TooRecent > 0) notes.Add($"свежих пропущено: {DisplayFormat.Count(p.TooRecent)}");
-            if (p.Protected > 0) notes.Add($"защищённых пропущено: {DisplayFormat.Count(p.Protected)}");
-            if (p.Deferred > 0) notes.Add($"ссылок и облачных пропущено: {DisplayFormat.Count(p.Deferred)}");
+                notes.Add(Strings.Get("Cleanup.LockedFiles") + string.Join(", ", p.LockedBy.Take(5).Select(l => $"{l.Name} ({l.ProcessId})"))
+                    + (p.LockedBy.Count > 5 ? Strings.Format("Cleanup.MoreLocks", p.LockedBy.Count - 5) : "")
+                    + (p.LockChecked < p.Items.Count ? Strings.Format("Cleanup.LockCoverage", DisplayFormat.Count(p.LockChecked), DisplayFormat.Count(p.Items.Count)) : ""));
+            if (p.TooRecent > 0) notes.Add(Strings.Format("Cleanup.RecentSkipped", DisplayFormat.Count(p.TooRecent)));
+            if (p.Protected > 0) notes.Add(Strings.Format("Cleanup.ProtectedSkipped", DisplayFormat.Count(p.Protected)));
+            if (p.Deferred > 0) notes.Add(Strings.Format("Cleanup.DeferredSkipped", DisplayFormat.Count(p.Deferred)));
             return string.Join("; ", notes);
         }
     }
@@ -61,19 +61,19 @@ public sealed partial class UsageRow(ProgramUsage usage, DateTime now) : Observa
     public ProgramUsage Usage { get; } = usage;
     public string Name => Usage.Program.Name;
     public string Publisher => Usage.Program.Publisher ?? "";
-    public string Kind => Usage.Program.Kind == ProgramKind.Steam ? "Игра Steam" : "Программа";
+    public string Kind => Usage.Program.Kind == ProgramKind.Steam ? Strings.Get("Usage.SteamGame") : Strings.Get("Usage.Program");
     public string Status { get; } = usage.Describe(now);
     public string Evidence { get; } = usage.Evidence switch
     {
-        EvidenceLevel.Heuristic => "Эвристика: только запуски через оболочку",
-        EvidenceLevel.Corroborated => "Подтверждено несколькими источниками",
-        EvidenceLevel.DirectEvidence => "Прямое свидетельство",
-        _ => "Нет данных",
+        EvidenceLevel.Heuristic => Strings.Get("Usage.Heuristic"),
+        EvidenceLevel.Corroborated => Strings.Get("Usage.Corroborated"),
+        EvidenceLevel.DirectEvidence => Strings.Get("Usage.DirectEvidence"),
+        _ => Strings.Get("Usage.NoEvidence"),
     };
     public bool IsUnused => Usage.Status == ObservationStatus.NoActivityObservedWithinCoveredWindow;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SizeText))] public partial long? SizeBytes { get; set; } = usage.Program.SizeBytes;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SizeText))] public partial bool Measured { get; set; }
-    public string SizeText => SizeBytes is long b ? (Measured ? "" : "≈ ") + DisplayFormat.Size(b) : "—";
+    public string SizeText => SizeBytes is long b ? (Measured ? "" : Strings.Get("Common.Approximate")) + DisplayFormat.Size(b) : Strings.Get("Common.Unavailable");
 }
 
 // Asks the user before anything is moved; a view concern, so the view model sees only this seam.
@@ -86,15 +86,15 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IRecycleBin recycleBin, IVolumeSpace space,
     IConfirmation confirmation, IFileDialogs dialogs, IVolumeCatalog volumeCatalog, VolumeHistory volumeHistory, TimeProvider time) : ObservableObject
 {
-    public const string Limitations = "Объём — сумма логических размеров записей; hard links могут учитываться повторно. Место на диске и число ссылок известны только для ста крупнейших файлов. Освобождаемое место не измеряется. Ссылки и облачные placeholders пропускаются. Модель отключена. Это каркас, а не готовый очиститель.";
+    public static string Limitations => Strings.Get("Scan.Limitations");
 
     [ObservableProperty] public partial string RootPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     [ObservableProperty] public partial string ExclusionsText { get; set; } = "";
-    [ObservableProperty] public partial string Status { get; set; } = "Готов к проверке";
+    [ObservableProperty] public partial string Status { get; set; } = Strings.Get("Scan.Ready");
     [ObservableProperty] public partial string Details { get; set; } = Limitations;
     [ObservableProperty] public partial IReadOnlyList<FileRow> Files { get; set; } = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectionSummary))] public partial IReadOnlyList<CleanupRow> Cleanup { get; set; } = [];
-    [ObservableProperty] public partial string CleanupStatus { get; set; } = "Оценка не выполнялась";
+    [ObservableProperty] public partial string CleanupStatus { get; set; } = Strings.Get("Cleanup.NotEstimated");
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
     [ObservableProperty] public partial string QuarantineStatus { get; set; } = "";
@@ -108,12 +108,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         Files = [];
         RootsSummary = "";
         IsBusy = true;
-        Status = "Анализ выполняется…";
+        Status = Strings.Get("Scan.Running");
         try
         {
             var progress = new Progress<ScanProgress>(p =>
             {
-                Status = $"Файлов: {DisplayFormat.Count(p.Files)} · логически: {DisplayFormat.Size(p.LogicalBytes)} · пропуски: {DisplayFormat.Count(p.Skipped)} · ошибки: {DisplayFormat.Count(p.Errors)}";
+                Status = Strings.Format("Scan.Progress", DisplayFormat.Count(p.Files), DisplayFormat.Size(p.LogicalBytes), DisplayFormat.Count(p.Skipped), DisplayFormat.Count(p.Errors));
                 if (p.Roots is not null) RootsSummary = RootsText(p.Roots);
             });
             string[] excluded = ExclusionsText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -121,18 +121,18 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             Files = result.LargestFiles.Select(FileRow.From).ToArray();
             AppLog.Info("Scan finished: state {State}, files {Files}, excluded {Excluded}, inaccessible {Inaccessible}", result.State, result.Files, result.ExcludedByPolicy, result.Inaccessible);
             Status = result.State == ScanState.RootNotFound
-                ? $"Анализ не выполнен: папка не найдена — {result.Root}"
-                : $"{Display(result.State)} · файлов: {DisplayFormat.Count(result.Files)} · логически: {DisplayFormat.Size(result.LogicalBytes)}";
-            Details = Coverage(result) + "\nЭто логический объём записей, не уникальный физический объём. Место на диске показано только для крупнейших файлов. Модель отсутствует.\n"
+                ? Strings.Format("Scan.RootNotFound", result.Root)
+                : Strings.Format("Scan.Summary", Display(result.State), DisplayFormat.Count(result.Files), DisplayFormat.Size(result.LogicalBytes));
+            Details = Coverage(result) + Strings.Get("Scan.VolumeExplanation")
                 + string.Join("\n", result.Diagnostics);
             // The cache is regenerable: a failed save is reported, not fatal.
             try { await history.SaveAsync(result, DateTime.UtcNow, CancellationToken.None); await history.TrimAsync(); }
-            catch (Exception ex) { Details += $"\nИстория сканов не сохранена: {ex.Message}"; }
+            catch (Exception ex) { Details += Strings.Format("Scan.HistorySaveFailed", ex.Message); }
         }
         catch (Exception ex)
         {
             AppLog.Failure("Scan", ex);
-            Status = "Проверка не выполнена";
+            Status = Strings.Get("Scan.Failed");
             Details = ex.Message;
         }
         finally { IsBusy = false; }
@@ -140,7 +140,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
 
     // FR-SCAN-004: totals per top-level folder, shown while the scan runs.
     private static string RootsText(IEnumerable<RootAggregate> roots) => string.Join("\n", roots.Select(r =>
-        $"{(r.Name.Length == 0 ? "(файлы в корне)" : r.Name)} — {DisplayFormat.Size(r.LogicalBytes)}, файлов: {DisplayFormat.Count(r.Files)}"));
+        Strings.Format("Scan.RootSummary", (r.Name.Length == 0 ? Strings.Get("Scan.RootFiles") : r.Name), DisplayFormat.Size(r.LogicalBytes), DisplayFormat.Count(r.Files))));
 
     // FR-CLN-002: the figure is an estimate of logical bytes, never presented as measured.
     [RelayCommand(IncludeCancelCommand = true)]
@@ -149,7 +149,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         Cleanup = [];
         CleanCommand.NotifyCanExecuteChanged();
         IsBusy = true;
-        CleanupStatus = "Оценка выполняется…";
+        CleanupStatus = Strings.Get("Cleanup.Estimating");
         try
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -163,12 +163,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             SetRows([.. found.Select(p => new CleanupRow(p))]);
             AppLog.Info("Cleanup estimate: {Categories} categories, {Files} files", found.Length, found.Sum(p => p.Items.Count));
             CleanupStatus = found.Length == 0
-                ? "По правилам каталога ничего не найдено"
-                : $"Оценка: {DisplayFormat.Size(found.Sum(p => p.LogicalBytes))} в {DisplayFormat.Count(found.Length)} категориях. "
-                  + "Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Очистка переносит файлы в карантин.";
+                ? Strings.Get("Cleanup.NothingFound")
+                : Strings.Format("Cleanup.EstimateSummary", DisplayFormat.Size(found.Sum(p => p.LogicalBytes)), DisplayFormat.Count(found.Length))
+                  + Strings.Get("Cleanup.EstimateExplanation");
         }
-        catch (OperationCanceledException) { CleanupStatus = "Оценка остановлена"; }
-        catch (Exception ex) { AppLog.Failure("Cleanup estimate", ex); CleanupStatus = "Оценка не выполнена: " + ex.Message; }
+        catch (OperationCanceledException) { CleanupStatus = Strings.Get("Cleanup.EstimateStopped"); }
+        catch (Exception ex) { AppLog.Failure("Cleanup estimate", ex); CleanupStatus = Strings.Get("Cleanup.EstimateFailed") + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -192,8 +192,8 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         get
         {
             CleanupRow[] chosen = [.. Cleanup.Where(r => r.IsSelected)];
-            return Cleanup.Count == 0 ? "" : chosen.Length == 0 ? "Отметьте категории, которые нужно очистить" : $"Выбрано категорий: {DisplayFormat.Count(chosen.Length)} из {DisplayFormat.Count(Cleanup.Count)}, "
-                + $"оценка {DisplayFormat.Size(chosen.Sum(r => r.Preview.LogicalBytes))}";
+            return Cleanup.Count == 0 ? "" : chosen.Length == 0 ? Strings.Get("Cleanup.SelectCategories") : Strings.Format("Cleanup.SelectionCount", DisplayFormat.Count(chosen.Length), DisplayFormat.Count(Cleanup.Count))
+                + Strings.Format("Cleanup.SelectionEstimate", DisplayFormat.Size(chosen.Sum(r => r.Preview.LogicalBytes)));
         }
     }
 
@@ -216,23 +216,23 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         if (hasFiles)
         {
             PolicyDecision decision = MutationPolicy.Evaluate(current, time.GetUtcNow().UtcDateTime);
-            if (!decision.Allowed) { CleanupStatus = "Очистка отклонена: " + decision.Reason; return; }
+            if (!decision.Allowed) { CleanupStatus = Strings.Get("Cleanup.Rejected") + decision.Reason; return; }
         }
-        else if (bin is null) { CleanupStatus = "Очистка отклонена: в выбранных категориях нет файлов."; return; }
+        else if (bin is null) { CleanupStatus = Strings.Get("Cleanup.NoFiles"); return; }
 
         var message = new System.Text.StringBuilder();
         if (hasFiles)
-            message.Append($"В карантин будет перемещено файлов: {DisplayFormat.Count(current.Items.Count)} (логически {DisplayFormat.Size(current.ExpectedBytes)}). ")
-                .Append("Файлы не стираются: их можно вернуть кнопкой «Вернуть из карантина» в течение 30 дней, потом они удаляются безвозвратно. ")
-                .Append("Занятые и изменённые после оценки файлы будут пропущены. Место на диске освободится после очистки карантина.\n\n");
+            message.Append(Strings.Format("Cleanup.ConfirmFiles", DisplayFormat.Count(current.Items.Count), DisplayFormat.Size(current.ExpectedBytes)))
+                .Append(Strings.Get("Cleanup.ConfirmRetention"))
+                .Append(Strings.Get("Cleanup.ConfirmSkipped"));
         if (bin is not null)
-            message.Append($"Корзина будет очищена окончательно: объектов {DisplayFormat.Count(bin.SystemCount)} (около {DisplayFormat.Size(bin.SystemBytes)}). ")
-                .Append("Вернуть их будет нельзя, карантин для Корзины не применяется.\n\n");
-        message.Append("Продолжить?");
-        if (!confirmation.Confirm("Очистка", message.ToString())) { CleanupStatus = "Очистка отменена"; return; }
+            message.Append(Strings.Format("Cleanup.ConfirmBin", DisplayFormat.Count(bin.SystemCount), DisplayFormat.Size(bin.SystemBytes)))
+                .Append(Strings.Get("Cleanup.ConfirmBinPermanent"));
+        message.Append(Strings.Get("Common.Continue"));
+        if (!confirmation.Confirm(Strings.Get("Cleanup.Title"), message.ToString())) { CleanupStatus = Strings.Get("Cleanup.Cancelled"); return; }
 
         IsBusy = true;
-        CleanupStatus = "Очистка выполняется…";
+        CleanupStatus = Strings.Get("Cleanup.Running");
         try
         {
             var lines = new List<string>();
@@ -243,18 +243,18 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
                 await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
                 AppLog.Info("Cleanup finished: plan {PlanId}, quarantined {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
                 var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
-                lines.Add($"Перемещено в карантин: {DisplayFormat.Count(report.Removed)} файлов (оценка по логическим размерам: {DisplayFormat.Size(report.BytesRemoved)}). Освобождено на диске: 0 Б — файлы в карантине пока занимают место, оно освободится после очистки карантина"
-                    + (report.Cancelled ? "; остановлено пользователем" : "")
-                    + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? "; пропущено — " + string.Join(", ", skipped) : "") + ".");
+                lines.Add(Strings.Format("Cleanup.Quarantined", DisplayFormat.Count(report.Removed), DisplayFormat.Size(report.BytesRemoved))
+                    + (report.Cancelled ? Strings.Get("Cleanup.StoppedByUser") : "")
+                    + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? Strings.Get("Cleanup.Skipped") + string.Join(", ", skipped) : "") + ".");
             }
             if (bin is not null && !cancellation.IsCancellationRequested) lines.Add(await EmptyRecycleBinAsync(bin));
-            CleanupStatus = string.Join("\n", lines) + "\nОценка устарела, выполните её заново.";
+            CleanupStatus = string.Join("\n", lines) + Strings.Get("Cleanup.EstimateStale");
             SetRows([]);
             await RefreshQuarantineAsync();
             await RefreshHistoryAsync();
         }
-        catch (PlanRejectedException ex) { CleanupStatus = "Очистка отклонена: " + ex.Message; }
-        catch (Exception ex) { AppLog.Failure("Cleanup", ex); CleanupStatus = "Очистка не выполнена: " + ex.Message; }
+        catch (PlanRejectedException ex) { CleanupStatus = Strings.Get("Cleanup.Rejected") + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Cleanup", ex); CleanupStatus = Strings.Get("Cleanup.Failed") + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -269,14 +269,14 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         long? delta = before is long b && after is long a ? a - b : null;
         await executions.RecordSystemActionAsync(bin.Rule.Id, bin.SystemBytes, ok ? "Done" : "Failed", time.GetUtcNow().UtcDateTime);
         AppLog.Info("Recycle Bin emptied: ok {Ok}, items {Items}, measured delta {Delta}", ok, bin.SystemCount, delta);
-        return ok ? "Корзина очищена. " + Measured(new PurgeReport((int)bin.SystemCount, 0, bin.SystemBytes, delta))
-            : "Корзину очистить не удалось: Windows отказала.";
+        return ok ? Strings.Get("RecycleBin.Emptied") + Measured(new PurgeReport((int)bin.SystemCount, 0, bin.SystemBytes, delta))
+            : Strings.Get("RecycleBin.Failed");
     }
 
     private static string Skipped(RemoveStatus status) => status switch
     {
-        RemoveStatus.Gone => "уже нет", RemoveStatus.Changed => "изменены после оценки", RemoveStatus.Locked => "заняты",
-        RemoveStatus.Unsafe => "отклонены защитой", RemoveStatus.Interrupted => "прерваны", _ => "ошибка",
+        RemoveStatus.Gone => Strings.Get("Skipped.Gone"), RemoveStatus.Changed => Strings.Get("Skipped.Changed"), RemoveStatus.Locked => Strings.Get("Skipped.Locked"),
+        RemoveStatus.Unsafe => Strings.Get("Skipped.Unsafe"), RemoveStatus.Interrupted => Strings.Get("Skipped.Interrupted"), _ => Strings.Get("Skipped.Error"),
     };
 
     // Called when the window opens: files past their retention are deleted for good, then the quarantine is summarised.
@@ -288,28 +288,28 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             RecoveryReport recovered = await recovery.RecoverAsync();
             PurgeReport expired = await Task.Run(() => quarantine.PurgeExpiredAsync());
             await RefreshQuarantineAsync((recovered.NeverMoved + recovered.Recovered + recovered.Unknown > 0
-                    ? $"После прерванной очистки: не тронуто {DisplayFormat.Count(recovered.NeverMoved)}, найдено в карантине {DisplayFormat.Count(recovered.Recovered)}, неясно {DisplayFormat.Count(recovered.Unknown)}. " : "")
-                + (recovered.UnrecordedFiles > 0 ? $"Неучтённых файлов в карантине: {DisplayFormat.Count(recovered.UnrecordedFiles)}. " : "")
-                + (expired.Purged > 0 ? $"Удалено по сроку хранения: {DisplayFormat.Count(expired.Purged)}. " + Measured(expired) + " " : ""));
+                    ? Strings.Format("Recovery.Summary", DisplayFormat.Count(recovered.NeverMoved), DisplayFormat.Count(recovered.Recovered), DisplayFormat.Count(recovered.Unknown)) : "")
+                + (recovered.UnrecordedFiles > 0 ? Strings.Format("Recovery.Unrecorded", DisplayFormat.Count(recovered.UnrecordedFiles)) : "")
+                + (expired.Purged > 0 ? Strings.Format("Quarantine.Expired", DisplayFormat.Count(expired.Purged)) + Measured(expired) + " " : ""));
             await RefreshHistoryAsync();
             await RefreshDisksAsync();
         }
-        catch (Exception ex) { AppLog.Failure("Startup recovery", ex); QuarantineStatus = "Карантин недоступен: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Startup recovery", ex); QuarantineStatus = Strings.Get("Quarantine.Unavailable") + ex.Message; }
     }
 
     private async Task RefreshQuarantineAsync(string prefix = "")
     {
         IReadOnlyList<ExecutionStore.QuarantinedFile> held = await quarantine.HeldAsync();
-        QuarantineStatus = prefix + (held.Count == 0 ? "Карантин пуст"
-            : $"В карантине: {DisplayFormat.Count(held.Count)} файлов, логически {DisplayFormat.Size(held.Sum(f => f.Size))}; самый ранний срок хранения до {held.Min(f => f.ExpiresUtc).ToLocalTime():d}");
+        QuarantineStatus = prefix + (held.Count == 0 ? Strings.Get("Quarantine.Empty")
+            : Strings.Format("Quarantine.Summary", DisplayFormat.Count(held.Count), DisplayFormat.Size(held.Sum(f => f.Size)), held.Min(f => f.ExpiresUtc).ToLocalTime()));
     }
 
     // FR-CLN-001..003: "Измерено" and "Оценка" stay separate; a gap over 10 % is explained.
     private static string Measured(PurgeReport r)
     {
-        if (r.MeasuredFreeDelta is not long d) return $"Оценка (логический размер): {DisplayFormat.Size(r.LogicalBytes)}. Освобождённое место измерить не удалось.";
-        string text = $"Освобождено на диске (измерено): {(d < 0 ? "−" : "")}{DisplayFormat.Size(Math.Abs(d))}. Оценка (логический размер): {DisplayFormat.Size(r.LogicalBytes)}.";
-        return FreedSpace.WhyDifferent(r.LogicalBytes, d) is { } why ? text + "\nПочему цифры отличаются: " + why : text;
+        if (r.MeasuredFreeDelta is not long d) return Strings.Format("Space.Unmeasured", DisplayFormat.Size(r.LogicalBytes));
+        string text = Strings.Format("Space.Measured", (d < 0 ? "−" : ""), DisplayFormat.Size(Math.Abs(d)), DisplayFormat.Size(r.LogicalBytes));
+        return FreedSpace.WhyDifferent(r.LogicalBytes, d) is { } why ? text + Strings.Get("Space.WhyDifferent") + why : text;
     }
 
     [RelayCommand]
@@ -320,11 +320,11 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         {
             RestoreReport report = await Task.Run(() => quarantine.RestoreAllAsync());
             AppLog.Info("Restore: restored {Restored}, failed {Failed}, hash mismatch {Mismatch}", report.Restored, report.Failed, report.HashMismatch);
-            await RefreshQuarantineAsync($"Возвращено: {DisplayFormat.Count(report.Restored)}"
-                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)} (на месте уже есть файл или карантин недоступен)" : "")
-                + (report.HashMismatch > 0 ? $"; не возвращено из-за несовпадения sha256: {DisplayFormat.Count(report.HashMismatch)} (файл остался в карантине)" : "") + ". ");
+            await RefreshQuarantineAsync(Strings.Format("Restore.Summary", DisplayFormat.Count(report.Restored))
+                + (report.Failed > 0 ? Strings.Format("Restore.FailedItems", DisplayFormat.Count(report.Failed)) : "")
+                + (report.HashMismatch > 0 ? Strings.Format("Restore.HashMismatch", DisplayFormat.Count(report.HashMismatch)) : "") + ". ");
         }
-        catch (Exception ex) { AppLog.Failure("Restore", ex); QuarantineStatus = "Возврат не выполнен: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Restore", ex); QuarantineStatus = Strings.Get("Restore.Failed") + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -335,16 +335,16 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         try
         {
             IReadOnlyList<ExecutionStore.QuarantinedFile> held = await quarantine.HeldAsync();
-            if (held.Count == 0) { QuarantineStatus = "Карантин пуст"; return; }
-            string message = $"Окончательно удалить из карантина файлов: {DisplayFormat.Count(held.Count)} (логически {DisplayFormat.Size(held.Sum(f => f.Size))})?\n\n"
-                + "Вернуть их после этого будет нельзя.";
-            if (!confirmation.Confirm("Очистка карантина", message)) { QuarantineStatus = "Очистка карантина отменена"; return; }
+            if (held.Count == 0) { QuarantineStatus = Strings.Get("Quarantine.Empty"); return; }
+            string message = Strings.Format("Quarantine.ConfirmPurge", DisplayFormat.Count(held.Count), DisplayFormat.Size(held.Sum(f => f.Size)))
+                + Strings.Get("Quarantine.PurgePermanent");
+            if (!confirmation.Confirm(Strings.Get("Quarantine.PurgeTitle"), message)) { QuarantineStatus = Strings.Get("Quarantine.PurgeCancelled"); return; }
             PurgeReport report = await Task.Run(() => quarantine.PurgeAllAsync());
             AppLog.Info("Quarantine purge: purged {Purged}, failed {Failed}, measured delta {Delta}", report.Purged, report.Failed, report.MeasuredFreeDelta);
-            await RefreshQuarantineAsync($"Удалено окончательно: {DisplayFormat.Count(report.Purged)}"
-                + (report.Failed > 0 ? $"; не удалось: {DisplayFormat.Count(report.Failed)}" : "") + ". " + Measured(report) + " ");
+            await RefreshQuarantineAsync(Strings.Format("Quarantine.Purged", DisplayFormat.Count(report.Purged))
+                + (report.Failed > 0 ? Strings.Format("Quarantine.PurgeFailedItems", DisplayFormat.Count(report.Failed)) : "") + ". " + Measured(report) + " ");
         }
-        catch (Exception ex) { AppLog.Failure("Quarantine purge", ex); QuarantineStatus = "Очистка карантина не выполнена: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Quarantine purge", ex); QuarantineStatus = Strings.Get("Quarantine.PurgeFailed") + ex.Message; }
         finally { IsBusy = false; }
     }
 
@@ -354,17 +354,17 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial string HistoryStatus { get; set; } = "";
     [ObservableProperty] public partial bool ShowWelcome { get; set; }
 
-    private static string ActionText(string action, string path) => path.StartsWith("shell:", StringComparison.Ordinal) ? "Очистка Корзины (окончательно)" : action switch
+    private static string ActionText(string action, string path) => path.StartsWith("shell:", StringComparison.Ordinal) ? Strings.Get("History.EmptyBin") : action switch
     {
-        "restore" => "Возврат из карантина",
-        "purge" => "Окончательное удаление из карантина",
-        _ => "Очистка (перенос в карантин)",
+        "restore" => Strings.Get("History.Restore"),
+        "purge" => Strings.Get("History.Purge"),
+        _ => Strings.Get("History.Cleanup"),
     };
 
     private static string ResultText(string result) => result switch
     {
-        "Removed" => "Перенесён", "Gone" => "Файла уже не было", "Changed" => "Изменён после оценки, пропущен", "Locked" => "Занят, пропущен",
-        "Unsafe" => "Отклонено защитой", "Failed" => "Ошибка", "Interrupted" => "Прервано", "Done" => "Выполнено", _ => result,
+        "Removed" => Strings.Get("Result.Removed"), "Gone" => Strings.Get("Result.Gone"), "Changed" => Strings.Get("Result.Changed"), "Locked" => Strings.Get("Result.Locked"),
+        "Unsafe" => Strings.Get("Result.Unsafe"), "Failed" => Strings.Get("Result.Failed"), "Interrupted" => Strings.Get("Result.Interrupted"), "Done" => Strings.Get("Result.Done"), _ => result,
     };
 
     [RelayCommand]
@@ -375,9 +375,9 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             var rows = await executions.RecentDecisionsAsync(500);
             History = [.. rows.Select(r => new HistoryRow(r.TimeUtc.ToLocalTime().ToString("g"), ActionText(r.Action, r.Path), ResultText(r.Result),
                 r.Category, DisplayFormat.Size(r.Bytes), r.Path))];
-            HistoryStatus = rows.Count == 0 ? "Журнал пока пуст" : $"Последние записи: {DisplayFormat.Count(rows.Count)}";
+            HistoryStatus = rows.Count == 0 ? Strings.Get("History.Empty") : Strings.Format("History.Recent", DisplayFormat.Count(rows.Count));
         }
-        catch (Exception ex) { AppLog.Failure("History", ex); HistoryStatus = "Журнал не прочитан: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("History", ex); HistoryStatus = Strings.Get("History.ReadFailed") + ex.Message; }
     }
 
     // A5/A14: every decision row is chained to the previous one; an edited or removed row is found here.
@@ -387,11 +387,11 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         try
         {
             long? broken = await Task.Run(() => executions.VerifyJournalAsync());
-            HistoryStatus = broken is null ? "Цепочка журнала цела: записи не менялись и не удалялись."
-                : $"Цепочка журнала нарушена, первая проблемная запись №{broken}. Журнал могли править вне Spacewise.";
+            HistoryStatus = broken is null ? Strings.Get("History.Verified")
+                : Strings.Format("History.Broken", broken);
             AppLog.Info("Journal verification: broken row {Row}", broken);
         }
-        catch (Exception ex) { AppLog.Failure("Journal verification", ex); HistoryStatus = "Проверка не выполнена: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Journal verification", ex); HistoryStatus = Strings.Get("History.VerifyFailed") + ex.Message; }
     }
 
     [ObservableProperty] public partial bool ExportIncludesPaths { get; set; }
@@ -400,39 +400,39 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [RelayCommand]
     private async Task ExportReportAsync()
     {
-        string? file = dialogs.SaveFile("Сохранить отчёт", $"spacewise-report-{time.GetUtcNow():yyyyMMdd}.md", "Markdown (*.md)|*.md");
+        string? file = dialogs.SaveFile(Strings.Get("Report.SaveTitle"), $"spacewise-report-{time.GetUtcNow():yyyyMMdd}.md", Strings.Get("Report.Filter"));
         if (file is null) return;
         try
         {
             var rows = await executions.RecentDecisionsAsync(5000);
             long? broken = await Task.Run(() => executions.VerifyJournalAsync());
             await System.IO.File.WriteAllTextAsync(file, ReportExport.BuildMarkdown(rows, ExportIncludesPaths, time.GetUtcNow().UtcDateTime, broken), new System.Text.UTF8Encoding(false));
-            HistoryStatus = $"Отчёт сохранён: записей {DisplayFormat.Count(rows.Count)}, пути {(ExportIncludesPaths ? "включены" : "скрыты")}.";
+            HistoryStatus = Strings.Format("Report.Saved", DisplayFormat.Count(rows.Count), (ExportIncludesPaths ? Strings.Get("Report.PathsIncluded") : Strings.Get("Report.PathsHidden")));
             AppLog.Info("Report exported: {Rows} rows, paths {Paths}", rows.Count, ExportIncludesPaths);
         }
-        catch (Exception ex) { AppLog.Failure("Report export", ex); HistoryStatus = "Отчёт не сохранён: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Report export", ex); HistoryStatus = Strings.Get("Report.Failed") + ex.Message; }
     }
 
     // Logs and a few facts, no journal and no paths.
     [RelayCommand]
     private async Task ExportDiagnosticsAsync()
     {
-        string? file = dialogs.SaveFile("Сохранить диагностический пакет", $"spacewise-diagnostics-{time.GetUtcNow():yyyyMMdd}.zip", "ZIP (*.zip)|*.zip");
+        string? file = dialogs.SaveFile(Strings.Get("Diagnostics.SaveTitle"), $"spacewise-diagnostics-{time.GetUtcNow():yyyyMMdd}.zip", Strings.Get("Diagnostics.Filter"));
         if (file is null) return;
         try
         {
             var facts = new Dictionary<string, string>
             {
-                ["Версия"] = typeof(MainViewModel).Assembly.GetName().Version?.ToString() ?? "?",
+                [Strings.Get("Diagnostics.Version")] = typeof(MainViewModel).Assembly.GetName().Version?.ToString() ?? "?",
                 ["Windows"] = Environment.OSVersion.VersionString,
                 [".NET"] = Environment.Version.ToString(),
-                ["Сформирован (UTC)"] = time.GetUtcNow().UtcDateTime.ToString("O"),
+                [Strings.Get("Diagnostics.GeneratedUtc")] = time.GetUtcNow().UtcDateTime.ToString("O"),
             };
             if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
             await Task.Run(() => ReportExport.CreateDiagnosticPackage(file, AppLog.Directory, facts));
-            HistoryStatus = "Диагностический пакет сохранён: журналы работы и сведения о версии, без списка файлов.";
+            HistoryStatus = Strings.Get("Diagnostics.Saved");
         }
-        catch (Exception ex) { AppLog.Failure("Diagnostics export", ex); HistoryStatus = "Пакет не сохранён: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Diagnostics export", ex); HistoryStatus = Strings.Get("Diagnostics.Failed") + ex.Message; }
     }
 
     [RelayCommand]
@@ -450,10 +450,10 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
 
     private static string ForecastText(FillForecast f, DateTime now) => f.Kind switch
     {
-        ForecastKind.NotEnoughData => $"Данных пока мало: нужно не меньше {FillForecast.MinimumPoints} замеров за {FillForecast.MinimumSpanDays} дней",
-        ForecastKind.NotShrinking => "Свободное место не убывает",
-        _ => $"Заполнится примерно {now.AddDays(f.Days!.Value).ToLocalTime():d} (через {DisplayFormat.Count((long)f.Days.Value)} дн.; "
-            + (f.HighDays is double high ? $"от {DisplayFormat.Count((long)f.LowDays!.Value)} до {DisplayFormat.Count((long)high)} дн." : $"не раньше чем через {DisplayFormat.Count((long)f.LowDays!.Value)} дн.") + ")",
+        ForecastKind.NotEnoughData => Strings.Format("Forecast.NotEnoughData", FillForecast.MinimumPoints, FillForecast.MinimumSpanDays),
+        ForecastKind.NotShrinking => Strings.Get("Forecast.NotShrinking"),
+        _ => Strings.Format("Forecast.Expected", now.AddDays(f.Days!.Value).ToLocalTime(), DisplayFormat.Count((long)f.Days.Value))
+            + (f.HighDays is double high ? Strings.Format("Forecast.Range", DisplayFormat.Count((long)f.LowDays!.Value), DisplayFormat.Count((long)high)) : Strings.Format("Forecast.Minimum", DisplayFormat.Count((long)f.LowDays!.Value))) + ")",
     };
 
     // §5.4: a snapshot per volume on each start (at most one an hour), then a trend line over the last 90 days.
@@ -469,34 +469,34 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             {
                 FillForecast forecast = FillForecast.From(await volumeHistory.PointsAsync(v.VolumeGuid), now);
                 rows.Add(new(v.Root, v.Label, v.FileSystem, DisplayFormat.Size(v.TotalBytes), DisplayFormat.Size(v.FreeBytes),
-                    v.TotalBytes > 0 ? $"{100 - 100.0 * v.FreeBytes / v.TotalBytes:0} %" : "—", ForecastText(forecast, now)));
+                    v.TotalBytes > 0 ? Strings.Format("Disk.UsedPercent", 100 - 100.0 * v.FreeBytes / v.TotalBytes) : Strings.Get("Common.Unavailable"), ForecastText(forecast, now)));
             }
             Disks = rows;
-            DisksStatus = rows.Count == 0 ? "Фиксированные диски не найдены" : $"Дисков: {DisplayFormat.Count(rows.Count)}. Прогноз строится по замерам при запуске, ему нужно несколько дней.";
+            DisksStatus = rows.Count == 0 ? Strings.Get("Disk.None") : Strings.Format("Disk.Summary", DisplayFormat.Count(rows.Count));
         }
-        catch (Exception ex) { AppLog.Failure("Disks", ex); DisksStatus = "Диски не прочитаны: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Disks", ex); DisksStatus = Strings.Get("Disk.Failed") + ex.Message; }
     }
 
     // FR-USE-008: removes what Spacewise itself stored (volume history). Windows' own launch records are not touched.
     [RelayCommand]
     private async Task EraseHistoryAsync()
     {
-        if (!confirmation.Confirm("Стереть историю", "Будет удалена история замеров дисков, которую хранит Spacewise. Журнал Windows о запусках программ не затрагивается, журнал действий очистки тоже остаётся.\n\nПродолжить?"))
+        if (!confirmation.Confirm(Strings.Get("History.EraseTitle"), Strings.Get("History.EraseConfirmation")))
             return;
         try
         {
             int removed = await volumeHistory.EraseAsync();
             UsageRows = [];
             UsageSummary = "";
-            UsageStatus = $"История стёрта: замеров дисков удалено {DisplayFormat.Count(removed)}. Данные использования Spacewise не хранит.";
+            UsageStatus = Strings.Format("History.Erased", DisplayFormat.Count(removed));
             AppLog.Info("History erased: {Snapshots} snapshots", removed);
             await RefreshDisksAsync();
         }
-        catch (Exception ex) { AppLog.Failure("Erase history", ex); UsageStatus = "История не стёрта: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Erase history", ex); UsageStatus = Strings.Get("History.EraseFailed") + ex.Message; }
     }
 
     [ObservableProperty] public partial IReadOnlyList<UsageRow> UsageRows { get; set; } = [];
-    [ObservableProperty] public partial string UsageStatus { get; set; } = "Нажмите «Прочитать использование»: данные берутся из журнала запусков Windows текущего пользователя.";
+    [ObservableProperty] public partial string UsageStatus { get; set; } = Strings.Get("Usage.Instructions");
     [ObservableProperty] public partial string UsageSummary { get; set; } = "";
     private CancellationTokenSource? sizing;
 
@@ -505,7 +505,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private async Task LoadUsageAsync()
     {
         sizing?.Cancel();
-        UsageStatus = "Чтение списка программ и журнала запусков…";
+        UsageStatus = Strings.Get("Usage.Reading");
         try
         {
             DateTime now = time.GetUtcNow().UtcDateTime;
@@ -520,12 +520,12 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             UsageRows = rows;
             UpdateUsageSummary();
             UsageStatus = readable
-                ? $"Программ: {DisplayFormat.Count(rows.Length)}. Источник: UserAssist (запуски через Пуск и Проводник); запуски другими способами он не видит."
-                : $"Программ: {DisplayFormat.Count(rows.Length)}. Журнал запусков прочитать не удалось: история неизвестна, а не «не используется».";
+                ? Strings.Format("Usage.Readable", DisplayFormat.Count(rows.Length))
+                : Strings.Format("Usage.Unreadable", DisplayFormat.Count(rows.Length));
             sizing = new CancellationTokenSource();
             _ = MeasureSizesAsync(rows, sizing.Token);
         }
-        catch (Exception ex) { AppLog.Failure("Usage read", ex); UsageStatus = "Не удалось прочитать использование: " + ex.Message; }
+        catch (Exception ex) { AppLog.Failure("Usage read", ex); UsageStatus = Strings.Get("Usage.Failed") + ex.Message; }
     }
 
     // Folder sizes can take minutes on game libraries, so the list is shown first and sizes arrive one by one.
@@ -552,22 +552,22 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     {
         UnusedSummary unused = UsageAnalyzer.Unused(UsageRows.Select(r => r.Usage with { Program = r.Usage.Program with { SizeBytes = r.SizeBytes } }));
         UsageSummary = unused.Programs == 0
-            ? "Нет программ, для которых данных достаточно, чтобы сказать «не запускалась»."
-            : $"{DisplayFormat.Count(unused.Programs)} программ не запускались {UsageAnalyzer.DefaultThresholdDays}+ дней · {DisplayFormat.Size(unused.Bytes)}"
-                + (unused.WithoutSize > 0 ? $" (размер неизвестен у {DisplayFormat.Count(unused.WithoutSize)})" : "")
-                + ". Это подсказка: удаление программ Spacewise не выполняет.";
+            ? Strings.Get("Usage.NoneUnused")
+            : Strings.Format("Usage.UnusedSummary", DisplayFormat.Count(unused.Programs), UsageAnalyzer.DefaultThresholdDays, DisplayFormat.Size(unused.Bytes))
+                + (unused.WithoutSize > 0 ? Strings.Format("Usage.UnknownSizes", DisplayFormat.Count(unused.WithoutSize)) : "")
+                + Strings.Get("Usage.NoUninstall");
     }
 
     // Three separate coverage buckets (FR-SCAN-002) instead of one "skipped" number.
     private static string Coverage(ScanResult r)
     {
-        string unvisited = DisplayFormat.Count(r.UnvisitedDirectories) + " папок"
-            + (r.StoppedEarly ? " и остаток после остановки" : "");
-        return $"Исключено правилами: {DisplayFormat.Count(r.ExcludedByPolicy)} · Недоступно: {DisplayFormat.Count(r.Inaccessible)} · Не досканировано: {unvisited}";
+        string unvisited = DisplayFormat.Count(r.UnvisitedDirectories) + Strings.Get("Scan.FolderCount")
+            + (r.StoppedEarly ? Strings.Get("Scan.StoppedRemainder") : "");
+        return Strings.Format("Scan.Coverage", DisplayFormat.Count(r.ExcludedByPolicy), DisplayFormat.Count(r.Inaccessible), unvisited);
     }
     private static string Display(ScanState state) => state switch
     {
-        ScanState.Completed => "Проверка завершена", ScanState.Partial => "Проверка частичная",
-        ScanState.Cancelled => "Остановлено; показана проверенная часть", _ => "Ошибка проверки"
+        ScanState.Completed => Strings.Get("Scan.Completed"), ScanState.Partial => Strings.Get("Scan.Partial"),
+        ScanState.Cancelled => Strings.Get("Scan.Cancelled"), _ => Strings.Get("Scan.Error")
     };
 }

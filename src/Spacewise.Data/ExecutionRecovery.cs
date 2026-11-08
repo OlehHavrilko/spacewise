@@ -31,7 +31,9 @@ public sealed class ExecutionRecovery(ExecutionStore store, PlanStore plans, str
                 neverMoved++;
                 continue;
             }
-            FileInfo? moved = orphans.FirstOrDefault(f => f.Length == item.ExpectedSize && f.LastWriteTimeUtc == item.ExpectedMtimeUtc);
+            FileInfo? moved = entry.Method == "delete"
+                ? orphans.FirstOrDefault(f => f.Length == item.ExpectedSize && f.LastWriteTimeUtc == item.ExpectedMtimeUtc)
+                : null;
             if (moved is not null)
             {
                 orphans.Remove(moved);

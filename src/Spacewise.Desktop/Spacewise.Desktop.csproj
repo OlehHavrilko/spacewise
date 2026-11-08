@@ -1,1 +1,48 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>Spacewise.Desktop.Program</StartupObject></PropertyGroup><ItemGroup><ApplicationDefinition Remove="App.xaml" /><Page Include="App.xaml" /></ItemGroup><ItemGroup><PackageReference Include="CommunityToolkit.Mvvm" /><PackageReference Include="Microsoft.Extensions.Hosting" /><PackageReference Include="Serilog" /><PackageReference Include="Serilog.Sinks.File" /></ItemGroup><ItemGroup><ProjectReference Include="../Spacewise.Catalog/Spacewise.Catalog.csproj" /><ProjectReference Include="../Spacewise.Core/Spacewise.Core.csproj" /><ProjectReference Include="../Spacewise.Data/Spacewise.Data.csproj" /><ProjectReference Include="../Spacewise.Platform.Windows/Spacewise.Platform.Windows.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>Spacewise.Desktop.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Spacewise.Catalog/Spacewise.Catalog.csproj" />
+    <ProjectReference Include="../Spacewise.Core/Spacewise.Core.csproj" />
+    <ProjectReference Include="../Spacewise.Data/Spacewise.Data.csproj" />
+    <ProjectReference Include="../Spacewise.Inference.Contracts/Spacewise.Inference.Contracts.csproj" />
+    <ProjectReference Include="../Spacewise.Inference/Spacewise.Inference.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Spacewise.Platform.Windows/Spacewise.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <Target Name="CopyInferenceWorker" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
+    <ItemGroup>
+      <InferenceWorkerOutput Include="$(MSBuildProjectDirectory)\..\Spacewise.Inference\bin\$(Configuration)\net10.0\**\*"
+                             Exclude="$(MSBuildProjectDirectory)\..\Spacewise.Inference\bin\$(Configuration)\net10.0\runtimes\**\*" />
+      <InferenceWorkerRuntimeX64 Include="$(MSBuildProjectDirectory)\..\Spacewise.Inference\bin\$(Configuration)\net10.0\runtimes\win-x64\**\*" />
+      <InferenceWorkerRuntimeArm64 Include="$(MSBuildProjectDirectory)\..\Spacewise.Inference\bin\$(Configuration)\net10.0\runtimes\win-arm64\**\*" />
+    </ItemGroup>
+    <MakeDir Directories="@(InferenceWorkerRuntimeX64->'$(OutDir)Inference\runtimes\win-x64\%(RecursiveDir)');
+                           @(InferenceWorkerRuntimeArm64->'$(OutDir)Inference\runtimes\win-arm64\%(RecursiveDir)')" />
+    <Copy SourceFiles="@(InferenceWorkerOutput)"
+          DestinationFiles="@(InferenceWorkerOutput->'$(OutDir)Inference\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(InferenceWorkerRuntimeX64)"
+          DestinationFiles="@(InferenceWorkerRuntimeX64->'$(OutDir)Inference\runtimes\win-x64\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(InferenceWorkerRuntimeArm64)"
+          DestinationFiles="@(InferenceWorkerRuntimeArm64->'$(OutDir)Inference\runtimes\win-arm64\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
+  <Target Name="PublishInferenceWorker" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' != ''">
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\..\Spacewise.Inference\Spacewise.Inference.csproj&quot; -c $(Configuration) -r $(RuntimeIdentifier) --self-contained $(SelfContained) -o &quot;$(PublishDir)Inference&quot;" />
+  </Target>
+</Project>

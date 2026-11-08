@@ -163,6 +163,20 @@ public class RuleFixtureTests
         Assert.Equal((1L, 1L, 2000L), (preview.TooRecent, preview.Deferred, preview.LogicalBytes));
     }
 
+    [Fact]
+    public void Identity_reader_excludes_unverifiable_files_and_binds_the_rest_to_the_plan()
+    {
+        (_, FixtureFile[] files) = RuleFixtures.All["user-temp"];
+        var id = new FileIdentity(42, 123);
+        RulePreview preview = Assert.Single(new CleanupPreviewer(Catalog, new FakeTree(files, Now), ProtectedPathsTests.Folders,
+            new FixedTime(Now), readIdentity: path => path.EndsWith("a.tmp", StringComparison.OrdinalIgnoreCase) ? id : null)
+            .Preview(TestContext.Current.CancellationToken, r => r.Id == "windows.user.temp"));
+
+        Assert.Equal(id, Assert.Single(preview.Items).Identity);
+        Assert.Equal(2, preview.Deferred);
+        Assert.Equal(id, Assert.Single(PlanBuilder.Build([preview], Now).Items).Identity);
+    }
+
     // FR-CLN-014: running apps and file holders are reported; only running processes from the rule count.
     [Fact]
     public void Running_processes_and_lock_holders_are_reported()

@@ -26,6 +26,29 @@ public sealed class CleanupPipelineTests : IDisposable
         new("test", 1, "delete", path, new FileInfo(path).Length, new FileInfo(path).LastWriteTimeUtc);
 
     [Fact]
+    public void Direct_plan_deletes_selected_files_without_using_quarantine()
+    {
+        UserFolders folders = UserFolders.FromEnvironment();
+        if (!ProtectedPaths.Check(Path.Combine(fx.Root, "x"), folders).Allowed) return;
+        string file = fx.File("direct.bin", 10);
+        string changed = fx.File("changed.bin", 20);
+        DateTime now = DateTime.UtcNow;
+        CleanupPlan plan = CleanupPlan.Create([ItemFor(file) with { Identity = FileMetadata.TryRead(file)!.Identity },
+            ItemFor(changed) with { ExpectedSize = 21, Identity = FileMetadata.TryRead(changed)!.Identity }], now, TimeSpan.FromHours(1), "user");
+
+        ExecutionReport report = new PlanExecutor(new HandleFileRemover(requireIdentity: true), folders, TimeProvider.System)
+            .Execute(plan, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, report.Removed);
+        Assert.Equal(10, report.BytesRemoved);
+        Assert.False(File.Exists(file));
+        Assert.True(File.Exists(changed));
+        Assert.Contains(report.Outcomes, o => o.Item.Path == changed && o.Status == RemoveStatus.Changed);
+        Assert.Empty(Directory.GetFiles(quarantine));
+        Assert.Null(report.Outcomes.Single(o => o.Status == RemoveStatus.Removed).StoredPath);
+    }
+
+    [Fact]
     public void Executed_plan_quarantines_files_and_restore_brings_them_back()
     {
         UserFolders folders = UserFolders.FromEnvironment();

@@ -6,7 +6,7 @@ namespace Spacewise.Platform.Windows;
 
 // ADR 0002: open the parent, check it is the directory the plan names, open the child relative to that handle
 // (NtCreateFile, no path re-resolution), compare with the plan, delete through the same handle with POSIX semantics.
-public unsafe partial class HandleFileRemover : IFileRemover
+public unsafe partial class HandleFileRemover(bool requireIdentity = false) : IFileRemover
 {
     protected const uint Delete = 0x00010000, Synchronize = 0x00100000, ListDirectory = 0x1, ReadAttributes = 0x80;
     protected const uint ShareAll = 0x7, OpenExisting = 3, BackupSemantics = 0x02000000, OpenReparse = 0x00200000;
@@ -28,6 +28,9 @@ public unsafe partial class HandleFileRemover : IFileRemover
 
     [StructLayout(LayoutKind.Sequential)]
     protected struct BasicInformation { public long Creation, LastAccess, LastWrite, Change; public uint Attributes; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileIdInformation { public ulong VolumeSerial, Low, High; }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct StandardInformation { public long Allocation, EndOfFile; public uint Links; public byte DeletePending, Directory; }
@@ -101,9 +104,19 @@ public unsafe partial class HandleFileRemover : IFileRemover
         if (!GetFileInformationByHandleEx(child, BasicInfo, &basic, (uint)sizeof(BasicInformation))
             || !GetFileInformationByHandleEx(child, StandardInfo, &standard, (uint)sizeof(StandardInformation)))
             return new(RemoveStatus.Failed, Marshal.GetLastPInvokeError());
-        if ((basic.Attributes & (AttrReparse | AttrDirectory)) != 0) return new(RemoveStatus.Unsafe);
+        if ((basic.Attributes & AttrDirectory) != 0 || MetadataScanPolicy.ShouldSkip((FileAttributes)basic.Attributes))
+            return new(RemoveStatus.Unsafe);
         if (standard.EndOfFile != item.ExpectedSize || DateTime.FromFileTimeUtc(basic.LastWrite) != item.ExpectedMtimeUtc)
             return new(RemoveStatus.Changed);
+        if (item.Identity is { } expected)
+        {
+            FileIdInformation id;
+            if (!GetFileInformationByHandleEx(child, 0x12, &id, (uint)sizeof(FileIdInformation)))
+                return new(RemoveStatus.Unsafe, Marshal.GetLastPInvokeError());
+            if (expected != new FileIdentity(id.VolumeSerial, new UInt128(id.High, id.Low)))
+                return new(RemoveStatus.Changed);
+        }
+        else if (requireIdentity) return new(RemoveStatus.Unsafe);
         return Act(child, item);
     }
 

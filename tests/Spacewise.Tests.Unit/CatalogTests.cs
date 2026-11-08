@@ -96,4 +96,14 @@ public class CatalogTests
             Assert.Contains($"правило {rule.Id}, версия {rule.RuleVersion}", text);
         }
     }
+
+    [Fact]
+    public void File_cleanup_explanation_never_promises_quarantine_or_recovery()
+    {
+        CleanupRule rule = CatalogLoader.LoadBuiltIn().Rules.First(r => r is { Action: "delete", RequiresAdmin: false });
+        string text = RuleExplainer.Explain(new RulePreview(rule, [new PreviewItem(@"C:\x", 1024, DateTime.UtcNow)], 0, 0, 0));
+        Assert.Contains("необратимо", text);
+        Assert.DoesNotContain("можно вернуть", text);
+        Assert.DoesNotContain("переносятся в карантин", text);
+    }
 }

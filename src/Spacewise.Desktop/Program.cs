@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Spacewise.Catalog;
 using Spacewise.Core;
 using Spacewise.Data;
+using Spacewise.Inference;
 using Spacewise.Platform.Windows;
 
 namespace Spacewise.Desktop;
@@ -28,9 +29,10 @@ public static class Program
         builder.Services.AddSingleton(sp => new PlanStore(sp.GetRequiredKeyedService<DatabaseWriter>("journal")));
         builder.Services.AddSingleton(sp => new ExecutionStore(sp.GetRequiredKeyedService<DatabaseWriter>("journal")));
         builder.Services.AddSingleton(UserFolders.FromEnvironment());
-        // Quarantine lives under the profile; a file on another volume cannot be renamed into it and is reported as failed, not deleted.
+        builder.Services.AddSingleton(new PinnedModelInstaller(System.IO.Path.Combine(data, "models")));
+        builder.Services.AddSingleton<LocalAssistantClient>();
         builder.Services.AddSingleton(sp => new QuarantineFileRemover(System.IO.Path.Combine(sp.GetRequiredService<UserFolders>().Spacewise, "Quarantine")));
-        builder.Services.AddSingleton<IFileRemover>(sp => sp.GetRequiredService<QuarantineFileRemover>());
+        builder.Services.AddSingleton<IFileRemover>(_ => new HandleFileRemover(requireIdentity: true));
         builder.Services.AddSingleton<IFileRestorer>(sp => sp.GetRequiredService<QuarantineFileRemover>());
         builder.Services.AddSingleton<IQuarantinePurger>(sp => sp.GetRequiredService<QuarantineFileRemover>());
         builder.Services.AddSingleton<IVolumeSpace, DriveVolumeSpace>();
@@ -45,7 +47,7 @@ public static class Program
         builder.Services.AddSingleton<IConfirmation, MessageBoxConfirmation>();
         builder.Services.AddSingleton<IFileDialogs, SaveFileDialogService>();
         builder.Services.AddSingleton(_ => new CleanupPreviewer(CatalogLoader.LoadBuiltIn(), new FileSystemTree(),
-            UserFolders.FromEnvironment(), TimeProvider.System, new ProcessList(), new RestartManager()));
+            UserFolders.FromEnvironment(), TimeProvider.System, new ProcessList(), new RestartManager(), path => FileMetadata.TryRead(path)?.Identity));
         builder.Services.AddTransient<MainViewModel>();
         builder.Services.AddTransient<MainWindow>();
         AppLog.Start();

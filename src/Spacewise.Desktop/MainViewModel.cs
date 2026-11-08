@@ -1,8 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Globalization;
 using Spacewise.Catalog;
 using Spacewise.Core;
 using Spacewise.Data;
+using Spacewise.Inference;
 using Spacewise.Platform.Windows;
 
 namespace Spacewise.Desktop;
@@ -76,7 +78,7 @@ public sealed partial class UsageRow(ProgramUsage usage, DateTime now) : Observa
     public string SizeText => SizeBytes is long b ? (Measured ? "" : Strings.Get("Common.Approximate")) + DisplayFormat.Size(b) : Strings.Get("Common.Unavailable");
 }
 
-// Asks the user before anything is moved; a view concern, so the view model sees only this seam.
+// Asks the user before cleanup; a view concern, so the view model sees only this seam.
 public interface IConfirmation
 {
     bool Confirm(string title, string message);
@@ -84,7 +86,8 @@ public interface IConfirmation
 
 public sealed partial class MainViewModel(IScanService scanner, ScanStore history, CleanupPreviewer cleanup, PlanStore plans,
     ExecutionStore executions, PlanExecutor executor, QuarantineService quarantine, ExecutionRecovery recovery, IRecycleBin recycleBin, IVolumeSpace space,
-    IConfirmation confirmation, IFileDialogs dialogs, IVolumeCatalog volumeCatalog, VolumeHistory volumeHistory, TimeProvider time) : ObservableObject
+    IConfirmation confirmation, IFileDialogs dialogs, IVolumeCatalog volumeCatalog, VolumeHistory volumeHistory, TimeProvider time,
+    PinnedModelInstaller modelInstaller, LocalAssistantClient assistant) : ObservableObject
 {
     public static string Limitations => Strings.Get("Scan.Limitations");
 
@@ -95,9 +98,29 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     [ObservableProperty] public partial IReadOnlyList<FileRow> Files { get; set; } = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectionSummary))] public partial IReadOnlyList<CleanupRow> Cleanup { get; set; } = [];
     [ObservableProperty] public partial string CleanupStatus { get; set; } = Strings.Get("Cleanup.NotEstimated");
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle))] public partial bool IsBusy { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsIdle), nameof(CanInstallModel), nameof(CanExplainCleanup), nameof(CanApplyGoalSuggestions))]
+    public partial bool IsBusy { get; set; }
     public bool IsIdle => !IsBusy;
     [ObservableProperty] public partial string QuarantineStatus { get; set; } = "";
+    [ObservableProperty] public partial string AssistantQuestion { get; set; } = Strings.Get("AI.DefaultQuestion");
+    [ObservableProperty] public partial string AssistantStatus { get; set; } = Strings.Get("AI.Unavailable");
+    [ObservableProperty] public partial string AssistantOutput { get; set; } = "";
+    [ObservableProperty] public partial string GoalGigabytesText { get; set; } = "20";
+    [ObservableProperty] public partial string GoalPlanStatus { get; set; } = "";
+    [ObservableProperty] public partial string GoalRecommendationsText { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanApplyGoalSuggestions))]
+    public partial IReadOnlyList<CleanupRow> GoalSuggestions { get; set; } = [];
+    [ObservableProperty] public partial string ModelDownloadStatus { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstallModel), nameof(CanExplainCleanup), nameof(ModelInstallButtonText))]
+    public partial bool ModelInstalled { get; set; }
+    [ObservableProperty] public partial bool IsModelDownloading { get; set; }
+    [ObservableProperty] public partial bool IsAssistantRunning { get; set; }
+    public bool ModelRuntimeAvailable => GC.GetGCMemoryInfo().TotalAvailableMemoryBytes >= 8L * 1024 * 1024 * 1024;
+    public bool CanInstallModel => IsIdle && !ModelInstalled && ModelRuntimeAvailable;
+    public bool CanExplainCleanup => IsIdle && ModelInstalled && ModelRuntimeAvailable;
+    public bool CanApplyGoalSuggestions => IsIdle && GoalSuggestions.Count > 0;
+    public string ModelInstallButtonText => Strings.Get(ModelInstalled ? "AI.InstalledButton"
+        : ModelRuntimeAvailable ? "AI.DownloadButton" : "AI.MemoryRequirement");
     [ObservableProperty] public partial string RootsSummary { get; set; } = "";
 
 
@@ -147,6 +170,9 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
     private async Task PreviewCleanupAsync(CancellationToken cancellation)
     {
         Cleanup = [];
+        GoalSuggestions = [];
+        GoalPlanStatus = "";
+        GoalRecommendationsText = "";
         CleanCommand.NotifyCanExecuteChanged();
         IsBusy = true;
         CleanupStatus = Strings.Get("Cleanup.Estimating");
@@ -177,7 +203,134 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         foreach (CleanupRow row in Cleanup) row.PropertyChanged -= OnRowChanged;
         foreach (CleanupRow row in rows) row.PropertyChanged += OnRowChanged;
         Cleanup = rows;
+        GoalSuggestions = [];
+        GoalPlanStatus = "";
+        GoalRecommendationsText = "";
         CleanCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    private void BuildGoalPlan()
+    {
+        if (IsBusy) return;
+        if (!decimal.TryParse(GoalGigabytesText, NumberStyles.Number, CultureInfo.CurrentCulture, out decimal gigabytes) || gigabytes <= 0)
+        {
+            ClearGoalPlan(Strings.Get("Goal.Invalid"));
+            return;
+        }
+
+        decimal requestedBytes = gigabytes * 1024m * 1024m * 1024m;
+        if (requestedBytes > long.MaxValue)
+        {
+            ClearGoalPlan(Strings.Get("Goal.TooLarge"));
+            return;
+        }
+
+        try
+        {
+            long targetBytes = decimal.ToInt64(decimal.Ceiling(requestedBytes));
+            GoalPlanResult plan = GoalPlanBuilder.Build(Cleanup.Where(r => r.CanSelect).Select(r => r.Preview), targetBytes);
+            HashSet<string> ids = [.. plan.Categories.Select(p => p.Rule.Id)];
+            GoalSuggestions = [.. Cleanup.Where(r => ids.Contains(r.Preview.Rule.Id))];
+            GoalPlanStatus = plan.Categories.Count == 0
+                ? Strings.Get("Goal.NoSafeCategories")
+                : Strings.Format("Goal.Summary", DisplayFormat.Size(plan.GoalBytes), DisplayFormat.Size(plan.EstimatedBytes),
+                      DisplayFormat.Count(plan.Categories.Count))
+                  + (plan.UnmetBytes > 0 ? Strings.Format("Goal.Shortfall", DisplayFormat.Size(plan.UnmetBytes)) : Strings.Get("Goal.TargetMet"));
+            GoalRecommendationsText = string.Join(Environment.NewLine, GoalSuggestions.Select(r =>
+                Strings.Format("Goal.Category", r.Title, r.Estimate, r.Consequence)));
+        }
+        catch (OverflowException)
+        {
+            ClearGoalPlan(Strings.Get("Goal.TotalTooLarge"));
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyGoalPlan()
+    {
+        if (IsBusy || GoalSuggestions.Count == 0) return;
+        var suggested = GoalSuggestions.ToHashSet();
+        foreach (CleanupRow row in Cleanup) row.IsSelected = suggested.Contains(row);
+        CleanCommand.NotifyCanExecuteChanged();
+        GoalPlanStatus = Strings.Get("Goal.SelectionApplied");
+    }
+
+    private void ClearGoalPlan(string status)
+    {
+        GoalSuggestions = [];
+        GoalPlanStatus = status;
+        GoalRecommendationsText = "";
+    }
+
+    [RelayCommand(IncludeCancelCommand = true)]
+    private async Task InstallModelAsync(CancellationToken cancellation)
+    {
+        if (IsBusy || modelInstaller.IsInstalled) return;
+        if (!ModelRuntimeAvailable) { AssistantStatus = Strings.Get("AI.LowMemory"); return; }
+        string message = Strings.Format("AI.DownloadConfirm", DisplayFormat.Size(modelInstaller.Model.SizeBytes), modelInstaller.Model.License,
+                modelInstaller.Model.Id, modelInstaller.Model.LicenseUri)
+            + Strings.Get("AI.DownloadPrivacy");
+        if (!confirmation.Confirm(Strings.Get("AI.DownloadTitle"), message)) return;
+
+        IsBusy = true;
+        IsModelDownloading = true;
+        ModelDownloadStatus = Strings.Get("AI.DownloadStarting");
+        AssistantStatus = Strings.Get("AI.DownloadStarting");
+        try
+        {
+            var progress = new Progress<ModelDownloadProgress>(p =>
+                ModelDownloadStatus = Strings.Format("AI.DownloadProgress", DisplayFormat.Size(p.DownloadedBytes), DisplayFormat.Size(p.TotalBytes)));
+            await modelInstaller.InstallAsync(progress, cancellation);
+            ModelInstalled = modelInstaller.IsInstalled;
+            ModelDownloadStatus = Strings.Get("AI.DownloadComplete");
+            AssistantStatus = Strings.Get("AI.Ready");
+            AppLog.Info("Local model installation completed: {ModelId}", modelInstaller.Model.Id);
+        }
+        catch (OperationCanceledException) { ModelDownloadStatus = Strings.Get("AI.DownloadCancelled"); }
+        catch (Exception ex)
+        {
+            AppLog.Failure("Local model installation", ex);
+            ModelDownloadStatus = Strings.Get("AI.DownloadFailed") + ex.Message;
+        }
+        finally { IsModelDownloading = false; IsBusy = false; }
+    }
+
+    [RelayCommand(IncludeCancelCommand = true)]
+    private async Task ExplainCleanupAsync(CancellationToken cancellation)
+    {
+        if (IsBusy || !modelInstaller.IsInstalled) return;
+        if (!ModelRuntimeAvailable) { AssistantStatus = Strings.Get("AI.LowMemory"); return; }
+        RulePreview[] previews = [.. Cleanup.Where(r => r.CanSelect).Select(r => r.Preview).Take(32)];
+        if (previews.Length == 0) { AssistantStatus = Strings.Get("AI.NoFacts"); return; }
+        AssistantStatus = Strings.Get("AI.Analyzing");
+        AssistantOutput = "";
+        IsBusy = true;
+        IsAssistantRunning = true;
+        try
+        {
+            AssistantFact[] facts = [.. previews.Select((p, index) => new AssistantFact($"F{index + 1:000}",
+                p.Rule.TitleRu,
+                p.Rule.Consequence switch
+                {
+                    Spacewise.Catalog.Consequence.Regenerated => "regenerated",
+                    Spacewise.Catalog.Consequence.Redownloaded => "redownloaded",
+                    _ => "permanent",
+                },
+                p.Rule.SideEffectsRu, p.FileCount, p.LogicalBytes))];
+            AssistantResponse response = await assistant.ExplainAsync(AssistantQuestion, facts, cancellation);
+            var byId = facts.ToDictionary(f => f.Id, f => f.Category, StringComparer.Ordinal);
+            AssistantOutput = response.SummaryRu + Environment.NewLine + Environment.NewLine
+                + string.Join(Environment.NewLine, response.Suggestions.Select(s => $"{byId[s.FactId]}: {s.ExplanationRu}"));
+            AssistantStatus = Strings.Get("AI.AdviceOnly");
+        }
+        catch (OperationCanceledException) { AssistantStatus = Strings.Get("AI.Cancelled"); }
+        catch (Exception ex)
+        {
+            AppLog.Failure("Local assistant", ex);
+            AssistantStatus = Strings.Get("AI.Failed") + ex.Message;
+        }
+        finally { IsAssistantRunning = false; IsBusy = false; }
     }
 
     private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -205,7 +358,6 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
 
     private bool CanClean() => Cleanup.Any(r => r.IsSelected && r.CanSelect);
 
-    // Files go to quarantine (reversible); the Recycle Bin, if chosen, is emptied by Windows (permanent, said in the confirmation).
     [RelayCommand(CanExecute = nameof(CanClean), IncludeCancelCommand = true)]
     private async Task CleanAsync(CancellationToken cancellation)
     {
@@ -223,7 +375,7 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         var message = new System.Text.StringBuilder();
         if (hasFiles)
             message.Append(Strings.Format("Cleanup.ConfirmFiles", DisplayFormat.Count(current.Items.Count), DisplayFormat.Size(current.ExpectedBytes)))
-                .Append(Strings.Get("Cleanup.ConfirmRetention"))
+                .Append(Strings.Get("Cleanup.ConfirmPermanent"))
                 .Append(Strings.Get("Cleanup.ConfirmSkipped"));
         if (bin is not null)
             message.Append(Strings.Format("Cleanup.ConfirmBin", DisplayFormat.Count(bin.SystemCount), DisplayFormat.Size(bin.SystemBytes)))
@@ -238,14 +390,26 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
             var lines = new List<string>();
             if (hasFiles)
             {
-                long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None);
+                long planId = await plans.SaveAsync(current, cancellation: CancellationToken.None, directDelete: true);
+                string[] volumes = [.. current.Items.Select(i => System.IO.Path.GetPathRoot(i.Path) ?? "")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
+                var before = volumes.ToDictionary(v => v, v => space.FreeBytes(v), StringComparer.OrdinalIgnoreCase);
                 ExecutionReport report = await Task.Run(() => executor.Execute(current, cancellation, executions.JournalFor(planId, time)), CancellationToken.None);
+                var after = volumes.ToDictionary(v => v, v => space.FreeBytes(v), StringComparer.OrdinalIgnoreCase);
                 await executions.FinishPlanAsync(planId, report.Cancelled ? "cancelled" : "done", CancellationToken.None);
-                AppLog.Info("Cleanup finished: plan {PlanId}, quarantined {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
+                AppLog.Info("Cleanup finished: plan {PlanId}, removed {Removed} of {Total}, cancelled {Cancelled}", planId, report.Removed, report.Outcomes.Count, report.Cancelled);
                 var skipped = report.Outcomes.Where(o => o.Status != RemoveStatus.Removed).GroupBy(o => o.Status).Select(g => $"{Skipped(g.Key)}: {DisplayFormat.Count(g.Count())}");
-                lines.Add(Strings.Format("Cleanup.Quarantined", DisplayFormat.Count(report.Removed), DisplayFormat.Size(report.BytesRemoved))
+                lines.Add(Strings.Format("Cleanup.Deleted", DisplayFormat.Count(report.Removed), DisplayFormat.Size(report.BytesRemoved))
                     + (report.Cancelled ? Strings.Get("Cleanup.StoppedByUser") : "")
                     + (report.Outcomes.Any(o => o.Status != RemoveStatus.Removed) ? Strings.Get("Cleanup.Skipped") + string.Join(", ", skipped) : "") + ".");
+                foreach (string volume in volumes)
+                {
+                    long logicalBytes = report.Outcomes.Where(o => o.Status == RemoveStatus.Removed
+                        && string.Equals(System.IO.Path.GetPathRoot(o.Item.Path) ?? "", volume, StringComparison.OrdinalIgnoreCase))
+                        .Sum(o => o.Item.ExpectedSize);
+                    long? delta = before[volume] is long b && after[volume] is long a ? a - b : null;
+                    lines.Add(Strings.Format("Cleanup.Volume", volume) + Measured(new PurgeReport(0, 0, logicalBytes, delta)));
+                }
             }
             if (bin is not null && !cancellation.IsCancellationRequested) lines.Add(await EmptyRecycleBinAsync(bin));
             CleanupStatus = string.Join("\n", lines) + Strings.Get("Cleanup.EstimateStale");
@@ -279,18 +443,19 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
         RemoveStatus.Unsafe => Strings.Get("Skipped.Unsafe"), RemoveStatus.Interrupted => Strings.Get("Skipped.Interrupted"), _ => Strings.Get("Skipped.Error"),
     };
 
-    // Called when the window opens: files past their retention are deleted for good, then the quarantine is summarised.
+    // Older quarantined files remain available until the user explicitly restores or removes them.
     public async Task InitializeAsync()
     {
         try
         {
+            ModelInstalled = modelInstaller.IsInstalled;
+            AssistantStatus = !ModelRuntimeAvailable ? Strings.Get("AI.LowMemory")
+                : ModelInstalled ? Strings.Get("AI.Ready") : Strings.Get("AI.Unavailable");
             ShowWelcome = await executions.GetSettingAsync("onboarded") is null;
             RecoveryReport recovered = await recovery.RecoverAsync();
-            PurgeReport expired = await Task.Run(() => quarantine.PurgeExpiredAsync());
             await RefreshQuarantineAsync((recovered.NeverMoved + recovered.Recovered + recovered.Unknown > 0
                     ? Strings.Format("Recovery.Summary", DisplayFormat.Count(recovered.NeverMoved), DisplayFormat.Count(recovered.Recovered), DisplayFormat.Count(recovered.Unknown)) : "")
-                + (recovered.UnrecordedFiles > 0 ? Strings.Format("Recovery.Unrecorded", DisplayFormat.Count(recovered.UnrecordedFiles)) : "")
-                + (expired.Purged > 0 ? Strings.Format("Quarantine.Expired", DisplayFormat.Count(expired.Purged)) + Measured(expired) + " " : ""));
+                + (recovered.UnrecordedFiles > 0 ? Strings.Format("Recovery.Unrecorded", DisplayFormat.Count(recovered.UnrecordedFiles)) : ""));
             await RefreshHistoryAsync();
             await RefreshDisksAsync();
         }

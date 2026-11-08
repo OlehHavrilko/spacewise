@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -9,8 +10,9 @@ namespace Spacewise.Data;
 public sealed class PlanStore(DatabaseWriter journal)
 {
     public const string DraftState = "draft";
+    public const string DirectDeleteMethod = "delete_direct";
 
-    public Task<long> SaveAsync(CleanupPlan plan, long? scanId = null, CancellationToken cancellation = default) =>
+    public Task<long> SaveAsync(CleanupPlan plan, long? scanId = null, CancellationToken cancellation = default, bool directDelete = false) =>
         journal.ExecuteAsync(connection =>
         {
             using SqliteTransaction transaction = connection.BeginTransaction();
@@ -34,14 +36,15 @@ public sealed class PlanStore(DatabaseWriter journal)
             {
                 item.Transaction = transaction;
                 item.CommandText = """
-                    INSERT INTO plan_items(plan_id, seq, method, path_enc, expected_size, expected_mtime, rule_id, rule_version, action_id, state)
-                    VALUES($plan, $seq, 'delete', $path, $size, $mtime, $rule, $version, $action, 'pending')
+                    INSERT INTO plan_items(plan_id, seq, method, file_id, path_enc, expected_size, expected_mtime, rule_id, rule_version, action_id, state)
+                    VALUES($plan, $seq, $method, $identity, $path, $size, $mtime, $rule, $version, $action, 'pending')
                     """;
                 SqliteParameter seq = item.Parameters.Add("$seq", SqliteType.Integer), path = item.Parameters.Add("$path", SqliteType.Blob),
                     size = item.Parameters.Add("$size", SqliteType.Integer), mtime = item.Parameters.Add("$mtime", SqliteType.Text),
                     rule = item.Parameters.Add("$rule", SqliteType.Text), version = item.Parameters.Add("$version", SqliteType.Integer),
-                    action = item.Parameters.Add("$action", SqliteType.Text);
+                    action = item.Parameters.Add("$action", SqliteType.Text), identity = item.Parameters.Add("$identity", SqliteType.Blob);
                 item.Parameters.AddWithValue("$plan", planId);
+                item.Parameters.AddWithValue("$method", directDelete ? DirectDeleteMethod : "delete");
                 int n = 0;
                 foreach (PlanItem i in plan.Items)
                 {
@@ -52,6 +55,7 @@ public sealed class PlanStore(DatabaseWriter journal)
                     rule.Value = i.RuleId;
                     version.Value = i.RuleVersion;
                     action.Value = i.ActionId;
+                    identity.Value = i.Identity is { } id ? IdentityBytes(id) : DBNull.Value;
                     item.ExecuteNonQuery();
                 }
             }
@@ -75,15 +79,27 @@ public sealed class PlanStore(DatabaseWriter journal)
 
             var items = new List<PlanItem>();
             using SqliteCommand rows = connection.CreateCommand();
-            rows.CommandText = "SELECT rule_id, rule_version, action_id, path_enc, expected_size, expected_mtime FROM plan_items WHERE plan_id = $id ORDER BY seq";
+            rows.CommandText = "SELECT rule_id, rule_version, action_id, path_enc, expected_size, expected_mtime, file_id FROM plan_items WHERE plan_id = $id ORDER BY seq";
             rows.Parameters.AddWithValue("$id", planId);
             using SqliteDataReader ri = rows.ExecuteReader();
             while (ri.Read())
-                items.Add(new(ri.GetString(0), (int)ri.GetInt64(1), ri.GetString(2), Encoding.UTF8.GetString((byte[])ri.GetValue(3)), ri.GetInt64(4), Parse(ri.GetString(5))));
+                items.Add(new(ri.GetString(0), (int)ri.GetInt64(1), ri.GetString(2), Encoding.UTF8.GetString((byte[])ri.GetValue(3)), ri.GetInt64(4),
+                    Parse(ri.GetString(5)), ri.IsDBNull(6) ? null : ReadIdentity((byte[])ri.GetValue(6))));
             var plan = new CleanupPlan(created, expires, origin, items, stored);
             return plan.DigestMatches() ? plan : throw new InvalidDataException($"План {planId}: digest не совпал с позициями.");
         }, cancellation);
 
     private static string Utc(DateTime value) => value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
     private static DateTime Parse(string value) => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime();
+    private static byte[] IdentityBytes(FileIdentity identity)
+    {
+        byte[] bytes = new byte[24];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, identity.VolumeSerial);
+        BinaryPrimitives.WriteUInt128LittleEndian(bytes.AsSpan(8), identity.FileId);
+        return bytes;
+    }
+
+    private static FileIdentity ReadIdentity(byte[] bytes) => bytes.Length == 24
+        ? new(BinaryPrimitives.ReadUInt64LittleEndian(bytes), BinaryPrimitives.ReadUInt128LittleEndian(bytes.AsSpan(8)))
+        : throw new InvalidDataException("Invalid file identity.");
 }

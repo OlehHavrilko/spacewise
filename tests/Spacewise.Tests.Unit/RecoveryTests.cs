@@ -46,13 +46,13 @@ public sealed class RecoveryTests : IDisposable
         return path;
     }
 
-    private async Task<(DatabaseWriter Writer, ExecutionStore Store, PlanStore Plans, long PlanId, CleanupPlan Plan)> Begin(params string[] paths)
+    private async Task<(DatabaseWriter Writer, ExecutionStore Store, PlanStore Plans, long PlanId, CleanupPlan Plan)> Begin(string[] paths, bool directDelete = false)
     {
         var writer = new DatabaseWriter(SqliteDatabase.Open(Path.Combine(dir, "journal.db"), Schemas.Journal, new Keys()).Connection);
         PlanItem[] items = [.. paths.Select(p => new PlanItem("r", 1, "delete", p, new FileInfo(p).Length, Mtime))];
         CleanupPlan plan = CleanupPlan.Create(items, Now, TimeSpan.FromHours(1), "user");
         var plans = new PlanStore(writer);
-        long id = await plans.SaveAsync(plan, cancellation: Ct);
+        long id = await plans.SaveAsync(plan, cancellation: Ct, directDelete: directDelete);
         return (writer, new ExecutionStore(writer), plans, id, plan);
     }
 
@@ -76,7 +76,7 @@ public sealed class RecoveryTests : IDisposable
     public async Task Item_that_was_never_moved_is_settled_as_interrupted_and_stays_in_place()
     {
         string file = MakeFile(dir, "a.bin", 10);
-        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin(file);
+        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin([file]);
         await using (writer)
         {
             await store.BeginItemAsync(id, 0, Ct);
@@ -95,7 +95,7 @@ public sealed class RecoveryTests : IDisposable
     public async Task Item_moved_before_the_crash_is_found_in_quarantine_and_becomes_restorable()
     {
         string file = MakeFile(dir, "b.bin", 20);
-        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin(file);
+        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin([file]);
         await using (writer)
         {
             await store.BeginItemAsync(id, 0, Ct);
@@ -116,7 +116,7 @@ public sealed class RecoveryTests : IDisposable
     public async Task Item_that_is_neither_in_place_nor_in_quarantine_is_reported_unknown()
     {
         string file = MakeFile(dir, "c.bin", 30);
-        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin(file);
+        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin([file]);
         await using (writer)
         {
             await store.BeginItemAsync(id, 0, Ct);
@@ -128,10 +128,30 @@ public sealed class RecoveryTests : IDisposable
     }
 
     [Fact]
+    public async Task Interrupted_direct_delete_does_not_claim_a_matching_legacy_quarantine_file()
+    {
+        string file = MakeFile(dir, "direct.bin", 30);
+        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, long id, _) = await Begin([file], directDelete: true);
+        await using (writer)
+        {
+            await store.BeginItemAsync(id, 0, Ct);
+            string orphan = MakeFile(quarantine, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 30);
+            File.Delete(file);
+
+            RecoveryReport report = await Recovery(store, plans).RecoverAsync(Ct);
+
+            Assert.Equal((0, 0, 1, 1), (report.NeverMoved, report.Recovered, report.Unknown, report.UnrecordedFiles));
+            Assert.Equal(["skipped:Interrupted"], await States(writer));
+            Assert.Empty(await store.HeldAsync(Ct));
+            Assert.True(File.Exists(orphan));
+        }
+    }
+
+    [Fact]
     public async Task Quarantine_files_without_a_row_are_counted_not_guessed()
     {
         string file = MakeFile(dir, "d.bin", 5);
-        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, _, _) = await Begin(file);
+        (DatabaseWriter writer, ExecutionStore store, PlanStore plans, _, _) = await Begin([file]);
         await using (writer)
         {
             MakeFile(quarantine, "ffffffffffffffffffffffffffffffff", 999);
@@ -145,7 +165,7 @@ public sealed class RecoveryTests : IDisposable
     public async Task Executor_journal_records_each_item_before_the_next_so_a_crash_leaves_one_in_doubt()
     {
         string a = MakeFile(dir, "e1.bin", 1), b = MakeFile(dir, "e2.bin", 2), c = MakeFile(dir, "e3.bin", 3);
-        (DatabaseWriter writer, ExecutionStore store, _, long id, CleanupPlan plan) = await Begin(a, b, c);
+        (DatabaseWriter writer, ExecutionStore store, _, long id, CleanupPlan plan) = await Begin([a, b, c]);
         await using (writer)
         {
             // Temp is inside the allowed roots; the remover "crashes" on the second item.

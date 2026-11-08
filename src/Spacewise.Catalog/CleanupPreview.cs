@@ -2,7 +2,7 @@ using Spacewise.Core;
 
 namespace Spacewise.Catalog;
 
-public sealed record PreviewItem(string Path, long LogicalBytes, DateTime LastWriteUtc);
+public sealed record PreviewItem(string Path, long LogicalBytes, DateTime LastWriteUtc, FileIdentity? Identity = null);
 
 // Estimate only (FR-CLN-002): logical bytes of matched files, not what the volume will gain.
 public sealed record RulePreview(CleanupRule Rule, IReadOnlyList<PreviewItem> Items, long TooRecent, long Protected, long Deferred)
@@ -21,7 +21,7 @@ public sealed record RulePreview(CleanupRule Rule, IReadOnlyList<PreviewItem> It
 
 // FR-CLN-013: preview is the selection the executor will run, without mutation.
 public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, UserFolders folders, TimeProvider time,
-    IProcessList? processes = null, ILockInspector? locks = null)
+    IProcessList? processes = null, ILockInspector? locks = null, Func<string, FileIdentity?>? readIdentity = null)
 {
     // Restart Manager cost grows with registered files; larger rules are sampled.
     public const int MaximumLockCheck = 2000;
@@ -65,7 +65,9 @@ public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, Use
                     if (MetadataScanPolicy.ShouldSkip(file.Attributes)) { deferred++; continue; }
                     if (!ProtectedPaths.Check(file.Path, folders).Allowed) { denied++; continue; }
                     if (target.MinAgeDays > 0 && file.LastWriteUtc > now.AddDays(-target.MinAgeDays)) { tooRecent++; continue; }
-                    items.Add(new(file.Path, file.Length, file.LastWriteUtc));
+                    FileIdentity? identity = readIdentity?.Invoke(file.Path);
+                    if (readIdentity is not null && identity is null) { deferred++; continue; }
+                    items.Add(new(file.Path, file.Length, file.LastWriteUtc, identity));
                 }
             }
         }

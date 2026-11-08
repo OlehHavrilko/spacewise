@@ -3,7 +3,8 @@ using System.Text;
 
 namespace Spacewise.Core;
 
-public sealed record PlanItem(string RuleId, int RuleVersion, string ActionId, string Path, long ExpectedSize, DateTime ExpectedMtimeUtc);
+public sealed record PlanItem(string RuleId, int RuleVersion, string ActionId, string Path, long ExpectedSize, DateTime ExpectedMtimeUtc,
+    FileIdentity? Identity = null);
 
 // A plan is what the executor will be allowed to run: the digest binds the exact item list (spec §8, risk "confused deputy").
 public sealed record CleanupPlan(DateTime CreatedUtc, DateTime ExpiresUtc, string Origin, IReadOnlyList<PlanItem> Items, byte[] Digest)
@@ -19,6 +20,8 @@ public sealed record CleanupPlan(DateTime CreatedUtc, DateTime ExpiresUtc, strin
     public static byte[] ComputeDigest(IReadOnlyList<PlanItem> items)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        bool includesIdentity = items.Any(i => i.Identity is not null);
+        if (includesIdentity) Append(hash, "file-identity-v1");
         foreach (PlanItem item in items)
         {
             // Length-prefixed fields: no field boundary can be shifted to produce the same bytes.
@@ -28,6 +31,15 @@ public sealed record CleanupPlan(DateTime CreatedUtc, DateTime ExpiresUtc, strin
             Append(hash, item.Path);
             Append(hash, item.ExpectedSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(hash, item.ExpectedMtimeUtc.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (includesIdentity)
+            {
+                Append(hash, item.Identity is null ? "0" : "1");
+                if (item.Identity is { } identity)
+                {
+                    Append(hash, identity.VolumeSerial.ToString("X16", System.Globalization.CultureInfo.InvariantCulture));
+                    Append(hash, identity.FileId.ToString("X32", System.Globalization.CultureInfo.InvariantCulture));
+                }
+            }
         }
         return hash.GetHashAndReset();
     }

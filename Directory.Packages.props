@@ -6,6 +6,9 @@
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+    <PackageVersion Include="LLamaSharp" Version="0.30.0" />
+    <PackageVersion Include="LLamaSharp.Backend.Cpu" Version="0.30.0" />
+    <PackageVersion Include="LLamaSharp.Backend.Vulkan" Version="0.30.0" />
     <!-- ADR 0005/0006: pulls SQLitePCLRaw.core 3.0.2; verified with Microsoft.Data.Sqlite.Core 10.0.13. -->
     <PackageVersion Include="Serilog" Version="4.3.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />

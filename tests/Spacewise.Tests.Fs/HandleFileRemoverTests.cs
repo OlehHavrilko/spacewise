@@ -22,6 +22,29 @@ public sealed class HandleFileRemoverTests : IDisposable
     }
 
     [Fact]
+    public void Direct_delete_rejects_replaced_file_even_with_the_same_size_and_timestamp()
+    {
+        string file = fx.File("original.bin", 10);
+        PlanItem original = ItemFor(file) with { Identity = FileMetadata.TryRead(file)!.Identity };
+        Assert.NotNull(original.Identity);
+        string replacement = fx.File("replacement.bin", 10);
+        File.SetLastWriteTimeUtc(replacement, original.ExpectedMtimeUtc);
+        File.Delete(file);
+        File.Move(replacement, file);
+
+        Assert.Equal(RemoveStatus.Changed, new HandleFileRemover(requireIdentity: true).Remove(original).Status);
+        Assert.True(File.Exists(file));
+    }
+
+    [Fact]
+    public void Direct_delete_rejects_file_without_identity()
+    {
+        string file = fx.File("no-id.bin", 10);
+        Assert.Equal(RemoveStatus.Unsafe, new HandleFileRemover(requireIdentity: true).Remove(ItemFor(file)).Status);
+        Assert.True(File.Exists(file));
+    }
+
+    [Fact]
     public void Removes_read_only_file()
     {
         string file = fx.File("ro.bin", 10);

@@ -11,6 +11,6 @@ public static class PlanBuilder
     public static CleanupPlan Build(IEnumerable<RulePreview> previews, DateTime createdUtc, string origin = "user", TimeSpan? lifetime = null) =>
         CleanupPlan.Create(
             previews.Where(p => p.Rule is { Action: "delete", RequiresAdmin: false })
-                .SelectMany(p => p.Items.Select(i => new PlanItem(p.Rule.Id, p.Rule.RuleVersion, p.Rule.Action, i.Path, i.LogicalBytes, i.LastWriteUtc))),
+                .SelectMany(p => p.Items.Select(i => new PlanItem(p.Rule.Id, p.Rule.RuleVersion, p.Rule.Action, i.Path, i.LogicalBytes, i.LastWriteUtc, i.Identity))),
             createdUtc, lifetime ?? DefaultLifetime, origin);
 }

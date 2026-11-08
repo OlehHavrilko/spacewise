@@ -63,16 +63,16 @@ public sealed class ExecutionStore(DatabaseWriter journal)
             store.CompleteItemAsync(planId, seq, outcome, time.GetUtcNow().UtcDateTime).GetAwaiter().GetResult();
     }
 
-    public sealed record InterruptedItem(long PlanId, int Seq);
+    public sealed record InterruptedItem(long PlanId, int Seq, string Method);
 
     public Task<IReadOnlyList<InterruptedItem>> InterruptedAsync(CancellationToken cancellation = default) =>
         journal.ExecuteAsync<IReadOnlyList<InterruptedItem>>(connection =>
         {
             using SqliteCommand query = connection.CreateCommand();
-            query.CommandText = "SELECT plan_id, seq FROM plan_items WHERE state = 'in_progress' ORDER BY plan_id, seq";
+            query.CommandText = "SELECT plan_id, seq, coalesce(method, '') FROM plan_items WHERE state = 'in_progress' ORDER BY plan_id, seq";
             using SqliteDataReader r = query.ExecuteReader();
             var list = new List<InterruptedItem>();
-            while (r.Read()) list.Add(new(r.GetInt64(0), (int)r.GetInt64(1)));
+            while (r.Read()) list.Add(new(r.GetInt64(0), (int)r.GetInt64(1), r.GetString(2)));
             return list;
         }, cancellation);
 

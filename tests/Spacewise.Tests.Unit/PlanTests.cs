@@ -39,6 +39,7 @@ public sealed class PlanTests : IDisposable
         Assert.NotEqual(baseline, Plan(a with { ExpectedSize = 11 }).Digest);
         Assert.NotEqual(baseline, Plan(a with { ExpectedMtimeUtc = Now }).Digest);
         Assert.NotEqual(baseline, Plan(a with { RuleVersion = 2 }).Digest);
+        Assert.NotEqual(baseline, Plan(a with { Identity = new FileIdentity(1, 2) }).Digest);
         Assert.NotEqual(baseline, Plan(a, Item(@"C:\Temp\b")).Digest);
     }
 
@@ -62,7 +63,8 @@ public sealed class PlanTests : IDisposable
         var keys = new TestKeys();
         await using var writer = new DatabaseWriter(SqliteDatabase.Open(Path.Combine(dir, "journal.db"), Schemas.Journal, keys).Connection);
         var store = new PlanStore(writer);
-        CleanupPlan plan = Plan(Item(@"C:\Temp\a", 5), Item(@"C:\Temp\я файл.txt", 7));
+        CleanupPlan plan = Plan(Item(@"C:\Temp\a", 5) with { Identity = new FileIdentity(ulong.MaxValue, UInt128.MaxValue) },
+            Item(@"C:\Temp\я файл.txt", 7));
 
         long id = await store.SaveAsync(plan, cancellation: TestContext.Current.CancellationToken);
         CleanupPlan? loaded = await store.LoadAsync(id, TestContext.Current.CancellationToken);
@@ -142,6 +144,22 @@ public sealed class PlanTests : IDisposable
 
         await exec.MarkRestoredAsync(held[0].Id, Now, TestContext.Current.CancellationToken);
         Assert.Equal([@"C:\Temp\b"], (await exec.HeldAsync(TestContext.Current.CancellationToken)).Select(h => h.OriginalPath));
+    }
+
+    [Fact]
+    public async Task Direct_cleanup_is_recorded_without_creating_a_quarantine_entry()
+    {
+        await using var writer = new DatabaseWriter(SqliteDatabase.Open(Path.Combine(dir, "journal.db"), Schemas.Journal, new TestKeys()).Connection);
+        CleanupPlan plan = Plan(Item(@"C:\Temp\a") with { Identity = new FileIdentity(42, 123) });
+        long id = await new PlanStore(writer).SaveAsync(plan, cancellation: TestContext.Current.CancellationToken, directDelete: true);
+        var store = new ExecutionStore(writer);
+        await store.BeginItemAsync(id, 0, TestContext.Current.CancellationToken);
+        await store.CompleteItemAsync(id, 0, new(plan.Items[0], RemoveStatus.Removed), Now, cancellation: TestContext.Current.CancellationToken);
+        await store.FinishPlanAsync(id, "done", TestContext.Current.CancellationToken);
+
+        Assert.Empty(await store.HeldAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("Removed", Assert.Single(await store.RecentDecisionsAsync(10, TestContext.Current.CancellationToken)).Result);
+        Assert.Null(await store.VerifyJournalAsync(TestContext.Current.CancellationToken));
     }
 
     private sealed class TestKeys : IDatabaseKeySource

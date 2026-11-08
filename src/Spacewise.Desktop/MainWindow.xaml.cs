@@ -1,4 +1,7 @@
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Win32;
 
 namespace Spacewise.Desktop;
@@ -9,7 +12,13 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = this.model = model;
-        Closing += (_, _) => model.ScanCommand.Cancel();
+        AddAssistantTab();
+        Closing += (_, _) =>
+        {
+            model.ScanCommand.Cancel();
+            model.InstallModelCancelCommand.Execute(null);
+            model.ExplainCleanupCancelCommand.Execute(null);
+        };
         Loaded += async (_, _) => await model.InitializeAsync();
     }
     // The folder dialog is a view concern; the result goes straight into the bound path.
@@ -17,5 +26,143 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFolderDialog { Title = Strings.Get("Dialog.SelectFolder") };
         if (dialog.ShowDialog(this) == true) model.RootPath = dialog.FolderName;
+    }
+
+    private void AddAssistantTab()
+    {
+        TabControl tabs = MainTabs;
+        var tab = new TabItem { Header = Strings.Get("Ui.065") };
+
+        var content = new StackPanel { Margin = new Thickness(12) };
+        var intro = new TextBlock { Text = Strings.Get("AI.Disclaimer"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        content.Children.Add(intro);
+
+        var goalTitle = new TextBlock { Text = Strings.Get("Goal.Title"), FontSize = 18, FontWeight = FontWeights.SemiBold };
+        content.Children.Add(goalTitle);
+        var goalNote = new TextBlock
+        {
+            Text = Strings.Get("Goal.Note"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 8),
+        };
+        content.Children.Add(goalNote);
+
+        var goalLabel = new TextBlock { Text = Strings.Get("Goal.AmountLabel"), Margin = new Thickness(0, 0, 0, 4) };
+        content.Children.Add(goalLabel);
+        var goalAmount = new TextBox
+        {
+            Width = 120,
+            MinHeight = 32,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+        AutomationProperties.SetName(goalAmount, Strings.Get("Goal.AmountLabel"));
+        goalAmount.SetBinding(TextBox.TextProperty, new Binding(nameof(MainViewModel.GoalGigabytesText))
+        {
+            Mode = BindingMode.TwoWay,
+            UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+        });
+        content.Children.Add(goalAmount);
+
+        var goalActions = new StackPanel { Orientation = Orientation.Horizontal };
+        var buildGoal = new Button
+        {
+            Content = Strings.Get("Goal.BuildButton"),
+            Padding = new Thickness(14, 8, 14, 8),
+        };
+        buildGoal.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.IsIdle)));
+        buildGoal.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.BuildGoalPlanCommand)));
+        goalActions.Children.Add(buildGoal);
+        var applyGoal = new Button
+        {
+            Content = Strings.Get("Goal.ApplyButton"),
+            Padding = new Thickness(14, 8, 14, 8),
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        applyGoal.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.CanApplyGoalSuggestions)));
+        applyGoal.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.ApplyGoalPlanCommand)));
+        goalActions.Children.Add(applyGoal);
+        content.Children.Add(goalActions);
+
+        var goalStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        goalStatus.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.GoalPlanStatus)));
+        content.Children.Add(goalStatus);
+        var goalRecommendations = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 12) };
+        goalRecommendations.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.GoalRecommendationsText)));
+        content.Children.Add(goalRecommendations);
+
+        var install = new Button
+        {
+            Padding = new Thickness(14, 8, 14, 8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        install.SetBinding(ContentControl.ContentProperty, new Binding(nameof(MainViewModel.ModelInstallButtonText)));
+        install.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.CanInstallModel)));
+        install.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.InstallModelCommand)));
+        content.Children.Add(install);
+
+        var cancelDownload = new Button
+        {
+            Content = Strings.Get("AI.CancelDownload"),
+            Padding = new Thickness(14, 8, 14, 8),
+            Margin = new Thickness(8, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        cancelDownload.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.IsModelDownloading)));
+        cancelDownload.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.InstallModelCancelCommand)));
+        content.Children.Add(cancelDownload);
+
+        var download = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        download.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.ModelDownloadStatus)));
+        content.Children.Add(download);
+
+        var questionLabel = new TextBlock { Text = Strings.Get("AI.QuestionLabel"), Margin = new Thickness(0, 16, 0, 4) };
+        content.Children.Add(questionLabel);
+        var question = new TextBox
+        {
+            MinHeight = 72,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+        AutomationProperties.SetName(question, Strings.Get("AI.QuestionLabel"));
+        question.SetBinding(TextBox.TextProperty, new Binding(nameof(MainViewModel.AssistantQuestion))
+        {
+            Mode = BindingMode.TwoWay,
+            UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+        });
+        content.Children.Add(question);
+
+        var explain = new Button
+        {
+            Content = Strings.Get("AI.ExplainButton"),
+            Padding = new Thickness(14, 8, 14, 8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        explain.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.CanExplainCleanup)));
+        explain.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.ExplainCleanupCommand)));
+        content.Children.Add(explain);
+
+        var cancelAnalysis = new Button
+        {
+            Content = Strings.Get("AI.CancelAnalysis"),
+            Padding = new Thickness(14, 8, 14, 8),
+            Margin = new Thickness(8, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        cancelAnalysis.SetBinding(IsEnabledProperty, new Binding(nameof(MainViewModel.IsAssistantRunning)));
+        cancelAnalysis.SetBinding(Button.CommandProperty, new Binding(nameof(MainViewModel.ExplainCleanupCancelCommand)));
+        content.Children.Add(cancelAnalysis);
+
+        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        status.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.AssistantStatus)));
+        content.Children.Add(status);
+
+        var output = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
+        output.SetBinding(TextBlock.TextProperty, new Binding(nameof(MainViewModel.AssistantOutput)));
+        content.Children.Add(output);
+
+        tab.Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = content };
+        tabs.Items.Add(tab);
     }
 }

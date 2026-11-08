@@ -56,3 +56,7 @@ docs/                        концепция, ТЗ, решения, иссл�
 ## История
 
 Тег `baseline-codex` — исходный каркас и ТЗ от Codex. Тег `claude-spec-original` — ТЗ Claude до слияния. Ветка `claude/spec` сохранена.
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE). Сторонние компоненты и лицензии: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

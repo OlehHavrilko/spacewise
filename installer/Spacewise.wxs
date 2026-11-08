@@ -1,4 +1,4 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <!-- FR-DEL-001: per-machine MSI, self-contained app. No service, no driver, no Run key, no scheduled task, no autostart.
        User data (%LOCALAPPDATA%\Spacewise: journal, cache, quarantine) is never touched by install, upgrade or uninstall:
        the quarantine holds the user's own files. -->
@@ -26,7 +26,14 @@
       </Files>
     </ComponentGroup>
 
-    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- Wizard: welcome, install folder, progress, finish. No license page until the owner picks a license (O1). Standard dialogs only, no custom actions. -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="4" Condition="NOT Installed" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="4" />
+    </UI>
 
     <Feature Id="Main" Title="Spacewise" Level="1">
       <ComponentGroupRef Id="MainExecutable" />

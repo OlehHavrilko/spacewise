@@ -103,6 +103,16 @@ public static class RuleFixtures
         ["telegram"] = ("app.telegram.cache", [Yes(@"C:\Users\u\AppData\Roaming\Telegram Desktop\tdata\user_data\cache\0\x"), Yes(@"C:\Users\u\AppData\Roaming\Telegram Desktop\tdata\user_data\media_cache\0\y"), No(@"C:\Users\u\AppData\Roaming\Telegram Desktop\tdata\key_datas"), No(@"C:\Users\u\AppData\Roaming\Telegram Desktop\tdata\D877F783D5D3EF8C\map")]),
         ["adobe-media"] = ("app.adobe.mediacache", [Yes(@"C:\Users\u\AppData\Roaming\Adobe\Common\Media Cache Files\a.cfa"), Yes(@"C:\Users\u\AppData\Roaming\Adobe\Common\Peak Files\b.pek"), No(@"C:\Users\u\AppData\Roaming\Adobe\Common\Presets\p.prfpset")]),
         ["cryptnet"] = ("windows.user.cryptneturlcache", [Yes(@"C:\Users\u\AppData\LocalLow\Microsoft\CryptnetUrlCache\Content\AB12"), Yes(@"C:\Users\u\AppData\LocalLow\Microsoft\CryptnetUrlCache\MetaData\AB12"), No(@"C:\Users\u\AppData\LocalLow\Microsoft\CryptnetUrlCache\other")]),
+        ["bun"] = ("dev.bun.cache", [Yes(@"C:\Users\u\.bun\install\cache\a\b"), No(@"C:\Users\u\.bun\bin\bun.exe")]),
+        ["uv"] = ("dev.uv.cache", [Yes(L + @"\uv\cache\wheels-v5\a"), No(L + @"\uv\python\cpython-3.12\python.exe")]),
+        ["poetry"] = ("dev.poetry.cache", [Yes(L + @"\pypoetry\Cache\artifacts\a"), No(L + @"\pypoetry\config.toml")]),
+        ["deno"] = ("dev.deno.cache", [Yes(L + @"\deno\deps\https\a"), Yes(L + @"\deno\gen\b"), No(L + @"\deno\location_data\c")]),
+        ["rustup"] = ("dev.rustup.downloads", [Yes(@"C:\Users\u\.rustup\downloads\a.partial"), Yes(@"C:\Users\u\.rustup\tmp\b"), No(@"C:\Users\u\.rustup\toolchains\stable\bin\rustc.exe")]),
+        ["android"] = ("dev.android.cache", [Yes(@"C:\Users\u\.android\cache\a"), No(@"C:\Users\u\.android\debug.keystore"), No(@"C:\Users\u\.android\avd\x.ini")]),
+        ["vscode-logs"] = ("electron.vscode.logs", [Yes(R + @"\Code\logs\20260101T000000\main.log"), No(R + @"\Code\User\settings.json")]),
+        ["cursor"] = ("electron.cursor.cache", [Yes(R + @"\Cursor\CachedData\a\x.code"), Yes(R + @"\Cursor\GPUCache\data_0"), No(R + @"\Cursor\User\settings.json")]),
+        ["gog"] = ("launcher.gog.webcache", [Yes(L + @"\GOG.com\Galaxy\webcache\a"), No(L + @"\GOG.com\Galaxy\Configuration\config.cfg")]),
+        ["ubisoft"] = ("launcher.ubisoft.cache", [Yes(L + @"\Ubisoft Game Launcher\cache\a"), Yes(L + @"\Ubisoft Game Launcher\logs\b.log"), No(L + @"\Ubisoft Game Launcher\settings.yml")]),
     };
 }
 

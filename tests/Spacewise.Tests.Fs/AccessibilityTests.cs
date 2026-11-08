@@ -32,6 +32,8 @@ public class AccessibilityTests
                 {
                     // The title bar buttons belong to Windows, not to Spacewise.
                     if (element.Current.AutomationId is "Minimize" or "Maximize" or "Restore" or "Close") continue;
+                    // Scroll bar arrows are part of the stock scroll bar, which the keyboard drives itself.
+                    if (type == ControlType.Button && TreeWalker.RawViewWalker.GetParent(element)?.Current.ControlType == ControlType.ScrollBar) continue;
                     string name = element.Current.Name;
                     if (string.IsNullOrWhiteSpace(name)) problems.Add($"{type.ProgrammaticName} without a name");
                     bool focusable = element.Current.IsKeyboardFocusable || type == ControlType.DataGrid;

@@ -11,6 +11,11 @@ public partial class MainWindow : Window
     public MainWindow(MainViewModel model)
     {
         InitializeComponent();
+        // Never taller/wider than the screen work area (200% DPI, small laptops).
+        Height = Math.Min(Height, SystemParameters.WorkArea.Height);
+        Width = Math.Min(Width, SystemParameters.WorkArea.Width);
+        MinHeight = Math.Min(MinHeight, Height);
+        MinWidth = Math.Min(MinWidth, Width);
         DataContext = this.model = model;
         AddAssistantTab();
         Closing += (_, _) =>
@@ -163,6 +168,6 @@ public partial class MainWindow : Window
         content.Children.Add(output);
 
         tab.Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = content };
-        tabs.Items.Add(tab);
+        tabs.Items.Insert(tabs.Items.Count - 1, tab); // Settings stays last
     }
 }

@@ -262,4 +262,19 @@
   <sys:String x:Key="Scan.Cancelled" xml:space="preserve">Остановлено; показана проверенная часть</sys:String>
   <sys:String x:Key="Scan.Error" xml:space="preserve">Ошибка проверки</sys:String>
   <sys:String x:Key="Dialog.SelectFolder" xml:space="preserve">Выберите локальную папку для анализа</sys:String>
+  <sys:String x:Key="Settings.Tab">Настройки</sys:String>
+  <sys:String x:Key="Settings.Title">Настройки</sys:String>
+  <sys:String x:Key="Settings.AppearanceHeader">Оформление</sys:String>
+  <sys:String x:Key="Settings.ThemeLabel">Тема</sys:String>
+  <sys:String x:Key="Settings.ThemeSystem">Как в Windows</sys:String>
+  <sys:String x:Key="Settings.ThemeLight">Светлая</sys:String>
+  <sys:String x:Key="Settings.ThemeDark">Тёмная</sys:String>
+  <sys:String x:Key="Settings.ThemeNote">Выбор применяется сразу и запоминается. В режиме высокой контрастности Windows используются системные цвета.</sys:String>
+  <sys:String x:Key="Settings.DataHeader">Данные приложения</sys:String>
+  <sys:String x:Key="Settings.DataNote">Журнал, кэш сканирований, карантин и логи лежат в этой папке. Установка и удаление приложения её не трогают.</sys:String>
+  <sys:String x:Key="Settings.OpenData">Открыть папку данных</sys:String>
+  <sys:String x:Key="Settings.OpenLogs">Открыть папку логов</sys:String>
+  <sys:String x:Key="Settings.AboutHeader">О программе</sys:String>
+  <sys:String x:Key="Settings.Version">Версия {0}</sys:String>
+  <sys:String x:Key="Settings.License">Лицензия MIT. Сторонние компоненты перечислены в файле THIRD-PARTY-NOTICES.md в репозитории проекта.</sys:String>
 </ResourceDictionary>

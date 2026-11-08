@@ -91,6 +91,27 @@ public sealed partial class MainViewModel(IScanService scanner, ScanStore histor
 {
     public static string Limitations => Strings.Get("Scan.Limitations");
 
+    // Settings tab
+    [ObservableProperty] public partial int ThemeIndex { get; set; } = (int)ThemeService.Current;
+    partial void OnThemeIndexChanged(int value)
+    {
+        var choice = (ThemeChoice)value;
+        ThemeService.Apply(choice);
+        new AppSettings(choice).Save();
+    }
+    public string AppVersion { get; } = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "";
+    public string DataFolder { get; } = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spacewise");
+    [RelayCommand] private void OpenDataFolder() => OpenFolder(DataFolder);
+    [RelayCommand] private void OpenLogsFolder() => OpenFolder(System.IO.Path.Combine(DataFolder, "logs"));
+    private static void OpenFolder(string path)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+        }
+        catch { /* explorer unavailable: nothing to recover */ }
+    }
     [ObservableProperty] public partial string RootPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     [ObservableProperty] public partial string ExclusionsText { get; set; } = "";
     [ObservableProperty] public partial string Status { get; set; } = Strings.Get("Scan.Ready");

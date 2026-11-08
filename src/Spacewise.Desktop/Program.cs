@@ -59,6 +59,7 @@ public static class Program
         {
             var app = new App();
             app.InitializeComponent();
+            ThemeService.Initialize();
             var window = host.Services.GetRequiredService<MainWindow>();
             if (args.SequenceEqual(["--smoke-test"]))
             {

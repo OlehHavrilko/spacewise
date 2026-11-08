@@ -22,6 +22,7 @@
     <BooleanToVisibilityConverter x:Key="Visible" />
   </Window.Resources>
 
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
   <Grid Margin="24">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -228,7 +229,7 @@
       </Grid>
     </Border>
 
-    <TabControl x:Name="MainTabs" Grid.Row="4" Margin="0,0,0,14">
+    <TabControl x:Name="MainTabs" Grid.Row="4" Height="520" Margin="0,0,0,14">
       <TabItem Header="{DynamicResource Ui.019}" AutomationProperties.Name="{DynamicResource Ui.019}">
         <DockPanel Margin="18">
           <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
@@ -421,6 +422,35 @@
           </DataGrid>
         </DockPanel>
       </TabItem>
+      <TabItem Header="{DynamicResource Settings.Tab}" AutomationProperties.Name="{DynamicResource Settings.Tab}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="{DynamicResource Settings.Title}" FontSize="20" FontWeight="SemiBold" />
+
+            <TextBlock Text="{DynamicResource Settings.AppearanceHeader}" FontWeight="SemiBold" Margin="0,22,0,8" />
+            <TextBlock Text="{DynamicResource Settings.ThemeLabel}" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,0,0,4" />
+            <ComboBox SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}" Width="240" HorizontalAlignment="Left"
+                      AutomationProperties.Name="{DynamicResource Settings.ThemeLabel}">
+              <ComboBoxItem Content="{DynamicResource Settings.ThemeSystem}" />
+              <ComboBoxItem Content="{DynamicResource Settings.ThemeLight}" />
+              <ComboBoxItem Content="{DynamicResource Settings.ThemeDark}" />
+            </ComboBox>
+            <TextBlock Text="{DynamicResource Settings.ThemeNote}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,6,0,0" />
+
+            <TextBlock Text="{DynamicResource Settings.DataHeader}" FontWeight="SemiBold" Margin="0,26,0,8" />
+            <TextBlock Text="{Binding DataFolder}" TextWrapping="Wrap" />
+            <TextBlock Text="{DynamicResource Settings.DataNote}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,4,0,10" />
+            <StackPanel Orientation="Horizontal">
+              <Button Content="{DynamicResource Settings.OpenData}" Command="{Binding OpenDataFolderCommand}" Margin="0,0,8,0" />
+              <Button Content="{DynamicResource Settings.OpenLogs}" Command="{Binding OpenLogsFolderCommand}" />
+            </StackPanel>
+
+            <TextBlock Text="{DynamicResource Settings.AboutHeader}" FontWeight="SemiBold" Margin="0,26,0,8" />
+            <TextBlock Text="{Binding AppVersion, StringFormat={}Spacewise {0}}" />
+            <TextBlock Text="{DynamicResource Settings.License}" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,4,0,0" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
 
     <Border Grid.Row="5" Style="{StaticResource CardBorder}" Padding="14">
@@ -443,4 +473,5 @@
       </DockPanel>
     </Border>
   </Grid>
+  </ScrollViewer>
 </Window>

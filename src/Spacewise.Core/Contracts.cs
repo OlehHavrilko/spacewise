@@ -7,17 +7,21 @@ public sealed record ScanRequest(string Root, IReadOnlyList<string> Exclusions, 
 public sealed record ScanProgress(long Files, long LogicalBytes, long Skipped, long Errors, IReadOnlyList<RootAggregate>? Roots = null);
 // Totals per top-level folder of the scan root; files directly in the root have an empty name.
 public sealed record RootAggregate(string Name, long Files, long LogicalBytes);
+public sealed record FolderAggregate(string Path, long Files, long LogicalBytes);
 // Volume serial plus 128-bit NTFS/ReFS file ID; equal identities are the same file (hard links).
 public readonly record struct FileIdentity(ulong VolumeSerial, UInt128 FileId);
 public sealed record FileFinding(string Path, long LogicalBytes, long? AllocatedBytes = null,
     FileIdentity? Identity = null, int? Links = null)
 {
+    public DateTime? LastWriteUtc { get; init; }
     // Removing one name of a multiply linked file frees no space.
     public bool IsHardLinked => Links > 1;
 }
 public sealed record ScanResult(Guid ScanId, string Root, ScanState State, long Files, long LogicalBytes,
     long Skipped, long Errors, IReadOnlyList<FileFinding> LargestFiles, IReadOnlyList<string> Diagnostics)
 {
+    public IReadOnlyList<FolderAggregate> Folders { get; init; } = [];
+    public bool FolderAggregationTruncated { get; init; }
     public long SkippedByPolicy { get; init; }
     public long UnvisitedDirectories { get; init; }
     // Cancellation or the file limit left an unknown remainder unvisited.

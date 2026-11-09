@@ -7,14 +7,14 @@ namespace Spacewise.Platform.Windows;
 public sealed class MetadataScanner : IScanner
 {
     // Attributes and length come from the enumeration buffer (FR-SCAN-001): no per-entry syscalls.
-    private readonly record struct Entry(string Path, FileAttributes Attributes, long Length);
+    private readonly record struct Entry(string Path, FileAttributes Attributes, long Length, DateTime LastWriteUtc);
     private static readonly EnumerationOptions Options = new()
     {
         RecurseSubdirectories = false, AttributesToSkip = 0, IgnoreInaccessible = false,
         ReturnSpecialDirectories = false, BufferSize = 65536,
     };
     private static IEnumerator<Entry> Enumerate(string path) => new FileSystemEnumerable<Entry>(path,
-        (ref FileSystemEntry e) => new Entry(e.ToFullPath(), e.Attributes, e.Length), Options).GetEnumerator();
+        (ref FileSystemEntry e) => new Entry(e.ToFullPath(), e.Attributes, e.Length, e.LastWriteTimeUtc.UtcDateTime), Options).GetEnumerator();
     private const int TopCount = 100;
     private const int RootsAfterMilliseconds = 2000;
     private const int MaxRoots = 20;
@@ -38,6 +38,7 @@ public sealed class MetadataScanner : IScanner
     private static ScanResult Scan(ScanRequest request, IProgress<ScanProgress>? progress, CancellationToken cancellation)
     {
         string root = ScanPaths.Normalize(request.Root);
+        var folders = new FolderAccumulator(root);
         if (!Path.IsPathFullyQualified(ScanPaths.Unquote(request.Root)) || root.StartsWith(@"\\", StringComparison.Ordinal))
             throw new ArgumentException("Выберите абсолютный путь на локальном диске.");
         if (request.MaximumFiles < 1) throw new ArgumentOutOfRangeException(nameof(request));
@@ -136,9 +137,11 @@ public sealed class MetadataScanner : IScanner
                         long length = entry.Length;
                         bytes = checked(bytes + length);
                         files++;
+                        folders.Add(path, length);
                         string rootName = TopLevelName(path, prefix);
-                        rootTotals[rootName] = rootTotals.TryGetValue(rootName, out var t) ? (t.Files + 1, t.Bytes + length) : (1, length);
-                        top.Enqueue(new FileFinding(path, length), length);
+                        if (rootTotals.TryGetValue(rootName, out var t)) rootTotals[rootName] = (t.Files + 1, t.Bytes + length);
+                        else if (rootTotals.Count < 4096) rootTotals[rootName] = (1, length);
+                        top.Enqueue(new FileFinding(path, length) { LastWriteUtc = entry.LastWriteUtc }, length);
                         if (top.Count > TopCount) top.Dequeue();
                     }
                 }
@@ -161,6 +164,9 @@ public sealed class MetadataScanner : IScanner
         IEnumerable<FileFinding> largest = top.UnorderedItems.Select(x => x.Element).OrderByDescending(x => x.LogicalBytes);
         if (state != ScanState.Cancelled) largest = largest.Select(FileMetadata.Enrich);
         return new(Guid.NewGuid(), root, state, files, bytes, skipped, errors, largest.ToArray(), diagnostics)
-        { SkippedByPolicy = skippedByPolicy, UnvisitedDirectories = unvisitedDirectories, StoppedEarly = stoppedEarly };
+        {
+            SkippedByPolicy = skippedByPolicy, UnvisitedDirectories = unvisitedDirectories, StoppedEarly = stoppedEarly,
+            Folders = folders.Snapshot(), FolderAggregationTruncated = folders.Truncated,
+        };
     }
 }

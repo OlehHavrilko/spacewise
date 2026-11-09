@@ -1,5 +1,5 @@
-# Builds the self-contained app and the per-machine MSI into artifacts\. Usage: .\installer\build.ps1 [-Version 0.1.0]
-param([string]$Version = "0.1.0", [switch]$Sign)
+# Builds the self-contained app and per-machine MSI into a fresh artifacts directory.
+param([string]$Version = "0.4.0", [switch]$Sign)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 function Get-DevSigningCert {
@@ -8,7 +8,7 @@ function Get-DevSigningCert {
     if (-not $cert) {
         $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(3)
     }
-    Export-Certificate -Cert $cert -FilePath "$root/artifacts/Spacewise-dev.cer" | Out-Null
+    Export-Certificate -Cert $cert -FilePath (Join-Path $stage 'Spacewise-dev.cer') | Out-Null
     return $cert
 }
 function Sign-File($path) {
@@ -16,14 +16,18 @@ function Sign-File($path) {
     if ($r.Status -notin "Valid", "UnknownError") { Write-Warning "sign $path : $($r.Status) $($r.StatusMessage)" }
     "signed $path ($($r.Status))"
 }
-$publish = Join-Path $root "artifacts\publish"
-if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
+$stage = Join-Path $root ('artifacts\msi-' + [Guid]::NewGuid().ToString('N'))
+$publish = Join-Path $stage 'publish'
+$msi = Join-Path $stage "Spacewise-$Version-x64.msi"
+New-Item -ItemType Directory -Path $stage | Out-Null
 dotnet publish "$root\src\Spacewise.Desktop" -c Release -r win-x64 --self-contained -p:PublishReadyToRun=true -p:Version=$Version -o $publish
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 if ($Sign) { Sign-File "$publish\Spacewise.Desktop.exe" }
 dotnet tool restore
-dotnet tool run wix -- build "$root\installer\Spacewise.wxs" -arch x64 -ext WixToolset.UI.wixext -d "Version=$Version" -d "PublishDir=$publish" -o "$root\artifacts\Spacewise-$Version-x64.msi"
+if ($LASTEXITCODE -ne 0) { throw "dotnet tool restore failed" }
+dotnet tool run wix -- build "$root\installer\Spacewise.wxs" -arch x64 -ext WixToolset.UI.wixext -d "Version=$Version" -d "PublishDir=$publish" -o $msi
 if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
-if ($Sign) { Sign-File "$root/artifacts/Spacewise-$Version-x64.msi" }
-Get-FileHash "$root\artifacts\Spacewise-$Version-x64.msi" -Algorithm SHA256 | Format-List
-& "$PSScriptRoot\verify.ps1" -Msi "$root\artifacts\Spacewise-$Version-x64.msi"
+if ($Sign) { Sign-File $msi }
+Get-FileHash -LiteralPath $msi -Algorithm SHA256 | Format-List
+& "$PSScriptRoot\verify.ps1" -Msi $msi
+Write-Output "MSI: $msi"

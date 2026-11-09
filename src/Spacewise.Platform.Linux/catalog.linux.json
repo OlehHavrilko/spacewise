@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "rules": [
+    { "id": "linux.thumbnails", "title": "Миниатюры изображений", "directory": "thumbnails", "minimumAgeDays": 14, "consequences": "Миниатюры будут созданы заново при просмотре папок." },
+    { "id": "linux.pip", "title": "Кэш pip", "directory": "pip", "minimumAgeDays": 30, "consequences": "При следующей установке Python-пакеты потребуется загрузить заново." },
+    { "id": "linux.mesa", "title": "Кэш шейдеров Mesa", "directory": "mesa_shader_cache", "minimumAgeDays": 30, "consequences": "Шейдеры будут скомпилированы заново; первый запуск может быть медленнее." },
+    { "id": "linux.mesa-single", "title": "Однофайловый кэш Mesa", "directory": "mesa_shader_cache_sf", "minimumAgeDays": 30, "consequences": "Шейдеры будут скомпилированы заново. Закройте игры и графические приложения." }
+  ]
+}

@@ -1,0 +1,110 @@
+<UserControl x:Class="Spacewise.Desktop.Views.AnalysisView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:Spacewise.Desktop">
+ <Grid Margin="12">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="2*" MinHeight="70" />
+   <RowDefinition Height="Auto" /><RowDefinition Height="3*" MinHeight="60" />
+  </Grid.RowDefinitions>
+  <StackPanel>
+   <DockPanel>
+    <Button DockPanel.Dock="Right" Content="{DynamicResource Ui.008}" Click="Browse_Click" Margin="6,0,0,0" />
+    <TextBox Text="{Binding RootPath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}" AutomationProperties.Name="{DynamicResource Ui.007}" />
+   </DockPanel>
+   <Expander Header="{DynamicResource Ui.066}" Margin="0,4,0,4">
+    <TextBox Text="{Binding ExclusionsText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsIdle}"
+     MaxHeight="80" MinHeight="40" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="{DynamicResource Ui.010}" />
+   </Expander>
+  </StackPanel>
+  <StackPanel Grid.Row="1" Margin="0,0,0,6">
+   <TextBlock Text="{DynamicResource Analysis.Title}" FontSize="18" FontWeight="SemiBold" />
+   <TextBlock Text="{Binding AnalysisCoverage}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}" />
+   <TextBlock Text="{Binding ScanComparison}" TextWrapping="Wrap" FontSize="12" />
+   <WrapPanel Margin="0,4,0,0">
+    <Button Content="{DynamicResource Analysis.ExportTitle}" Command="{Binding ExportAnalysisReportCommand}" />
+    <CheckBox Content="{DynamicResource Analysis.ExportPaths}" IsChecked="{Binding ExportIncludesPaths}" Margin="12,0,0,0" VerticalAlignment="Center" />
+    <Button Content="{DynamicResource Analysis.ExplainFile}" Command="{Binding ExplainSelectedFileCommand}" IsEnabled="{Binding IsIdle}" Margin="12,0,0,0" />
+    <Button Content="{DynamicResource AI.CancelAnalysis}" Command="{Binding ExplainSelectedFileCancelCommand}" Margin="8,0,0,0" />
+   </WrapPanel>
+   <ScrollViewer MaxHeight="64" VerticalScrollBarVisibility="Auto">
+    <TextBlock Text="{Binding FileAdvice}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+   </ScrollViewer>
+  </StackPanel>
+  <Grid Grid.Row="2">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
+   <TreeView ItemsSource="{Binding FolderRoots}" SelectedItemChanged="Folder_Selected"
+    Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource TextBrush}"
+    VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling"
+    ScrollViewer.CanContentScroll="True" AutomationProperties.Name="{DynamicResource Analysis.Tree}">
+    <TreeView.ItemContainerStyle>
+     <Style TargetType="TreeViewItem">
+      <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+      <Style.Triggers>
+       <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" /></Trigger>
+      </Style.Triggers>
+     </Style>
+    </TreeView.ItemContainerStyle>
+    <TreeView.ItemTemplate>
+     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+      <TextBlock Text="{Binding Label}" ToolTip="{Binding Description}"
+       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" />
+     </HierarchicalDataTemplate>
+    </TreeView.ItemTemplate>
+   </TreeView>
+   <ListBox Grid.Column="1" ItemsSource="{Binding MapFolders}" SelectedItem="{Binding SelectedMapFolder, Mode=TwoWay}"
+    Margin="8,0,0,0" Background="{DynamicResource SurfaceBrush}" BorderThickness="0"
+    ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+    ScrollViewer.CanContentScroll="False" AutomationProperties.Name="{DynamicResource Analysis.Map}">
+    <ListBox.ItemsPanel><ItemsPanelTemplate><local:TreemapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+    <ListBox.ItemContainerStyle>
+     <Style TargetType="ListBoxItem">
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="local:TreemapPanel.Weight" Value="{Binding LogicalBytes}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+      <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+      <Setter Property="Template"><Setter.Value>
+       <ControlTemplate TargetType="ListBoxItem">
+        <Border x:Name="Tile" Background="{DynamicResource SubtleBrush}" BorderBrush="{DynamicResource StrokeBrush}"
+         BorderThickness="1" Margin="1" Padding="5" ClipToBounds="True">
+         <ContentPresenter />
+        </Border>
+        <ControlTemplate.Triggers>
+         <Trigger Property="IsSelected" Value="True">
+          <Setter TargetName="Tile" Property="Background" Value="{DynamicResource AccentBrush}" />
+          <Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+         </Trigger>
+         <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter TargetName="Tile" Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+          <Setter TargetName="Tile" Property="BorderThickness" Value="2" />
+         </Trigger>
+        </ControlTemplate.Triggers>
+       </ControlTemplate>
+      </Setter.Value></Setter>
+     </Style>
+    </ListBox.ItemContainerStyle>
+    <ListBox.ItemTemplate><DataTemplate>
+     <TextBlock Text="{Binding Label}" ToolTip="{Binding Description}" TextWrapping="Wrap"
+      Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+    </DataTemplate></ListBox.ItemTemplate>
+   </ListBox>
+  </Grid>
+  <DockPanel Grid.Row="3" Margin="0,8,0,6">
+   <Button DockPanel.Dock="Right" Content="{DynamicResource Analysis.ShowAll}" Command="{Binding ShowAllFilesCommand}" Padding="8,4" MinHeight="28" />
+   <TextBlock Text="{DynamicResource Ui.020}" FontWeight="SemiBold" VerticalAlignment="Center" />
+  </DockPanel>
+  <DataGrid Grid.Row="4" ItemsSource="{Binding VisibleFiles}" SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+   IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" AutomationProperties.Name="{DynamicResource Ui.020}">
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="{DynamicResource Ui.021}" Binding="{Binding Path}" Width="*" MinWidth="150" />
+    <DataGridTextColumn Header="{DynamicResource Ui.022}" Binding="{Binding Size}" Width="105" />
+    <DataGridTextColumn Header="{DynamicResource Ui.023}" Binding="{Binding OnDisk}" Width="105" />
+    <DataGridTextColumn Header="{DynamicResource Ui.024}" Binding="{Binding Note}" Width="150" />
+   </DataGrid.Columns>
+  </DataGrid>
+ </Grid>
+</UserControl>

@@ -1,0 +1,90 @@
+<UserControl x:Class="Spacewise.Desktop.Views.CleanupView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <UserControl.Resources><BooleanToVisibilityConverter x:Key="Visible" /></UserControl.Resources>
+
+        <DockPanel Margin="18">
+          <Expander DockPanel.Dock="Bottom" Header="{DynamicResource Ui.067}" Margin="0,8,0,0"
+                    Visibility="{Binding HasLegacyQuarantine, Converter={StaticResource Visible}}">
+            <StackPanel>
+              <TextBlock Text="{Binding QuarantineStatus}" TextWrapping="Wrap" MaxHeight="80" />
+              <WrapPanel>
+                <Button Content="{DynamicResource Ui.017}" Command="{Binding RestoreCommand}" IsEnabled="{Binding IsIdle}" />
+                <Button Content="{DynamicResource Ui.018}" Command="{Binding PurgeCommand}" IsEnabled="{Binding IsIdle}" Style="{StaticResource DestructiveButton}" Margin="6,0,0,0" />
+              </WrapPanel>
+            </StackPanel>
+          </Expander>
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12"><Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,12"
+            Visibility="{Binding HasCleanupReport, Converter={StaticResource Visible}}">
+              <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+              <StackPanel>
+                <TextBlock Text="{DynamicResource Cleanup.ReportTitle}" FontSize="17" FontWeight="SemiBold" />
+                <TextBlock Text="{DynamicResource Cleanup.ReportNote}" TextWrapping="Wrap" Margin="0,4,0,8" />
+                  <TextBlock Text="{Binding CleanupReport}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock Text="{DynamicResource Feedback.Prompt}" TextWrapping="Wrap" Margin="0,8,0,4" />
+                <WrapPanel>
+                  <Button Content="{DynamicResource Feedback.Ok}" Command="{Binding SaveFeedbackCommand}" CommandParameter="ok" Padding="8,4" MinHeight="28" />
+                  <Button Content="{DynamicResource Feedback.Problem}" Command="{Binding SaveFeedbackCommand}" CommandParameter="problem" Padding="8,4" MinHeight="28" Margin="6,0,0,0" />
+                </WrapPanel>
+                <TextBlock Text="{Binding FeedbackStatus}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+              </StackPanel>
+              </ScrollViewer>
+            </Border>
+            <TextBlock Text="{DynamicResource Ui.025}" FontSize="18" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding CleanupStatus}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0"
+                       AutomationProperties.LiveSetting="Polite" />
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+              <Button Content="{DynamicResource Ui.026}"
+                      Padding="10,5"
+                      Command="{Binding SelectAllCommand}" />
+              <Button Content="{DynamicResource Ui.027}"
+                      Padding="10,5"
+                      Margin="8,0,0,0"
+                      Command="{Binding SelectNoneCommand}" />
+              <TextBlock Text="{Binding SelectionSummary}"
+                         Foreground="{DynamicResource MutedBrush}"
+                         Margin="16,0,0,0"
+                         VerticalAlignment="Center"
+                         AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </StackPanel>
+          <DataGrid ItemsSource="{Binding Cleanup}"
+                    IsReadOnly="False"
+                    RowDetailsVisibilityMode="VisibleWhenSelected"
+                    AutoGenerateColumns="False"
+                    CanUserAddRows="False"
+                    AutomationProperties.Name="{DynamicResource Ui.028}">
+            <DataGrid.RowDetailsTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Explanation}"
+                           Margin="24,8,12,12"
+                           TextWrapping="Wrap"
+                           AutomationProperties.Name="{DynamicResource Ui.029}" />
+              </DataTemplate>
+            </DataGrid.RowDetailsTemplate>
+            <DataGrid.Columns>
+              <DataGridTemplateColumn Header="{DynamicResource Ui.030}" Width="64">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate>
+                    <CheckBox HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                              IsEnabled="{Binding CanSelect}"
+                              AutomationProperties.Name="{DynamicResource Ui.031}" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.032}" Binding="{Binding Title, Mode=OneWay}" Width="190" />
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.033}" Binding="{Binding Files, Mode=OneWay}" Width="76" />
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.034}" Binding="{Binding Estimate, Mode=OneWay}" Width="100" />
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.035}" Binding="{Binding Consequence, Mode=OneWay}" Width="150" />
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.036}" Binding="{Binding SideEffects, Mode=OneWay}" Width="*" />
+              <DataGridTextColumn IsReadOnly="True" Header="{DynamicResource Ui.024}" Binding="{Binding Note, Mode=OneWay}" Width="190" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+
+</UserControl>

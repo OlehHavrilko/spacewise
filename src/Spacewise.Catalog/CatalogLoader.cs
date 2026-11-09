@@ -31,6 +31,31 @@ public static partial class CatalogLoader
         return Load(stream);
     }
 
+    public static CleanupCatalog LoadWithUserRules(string directory)
+    {
+        CleanupCatalog builtIn = LoadBuiltIn();
+        if (!Directory.Exists(directory)) return builtIn;
+        string[] files = Directory.GetFiles(directory, "*.json").Order(StringComparer.Ordinal).ToArray();
+        if (files.Length > 32) throw new CatalogException("Не более 32 пользовательских каталогов.");
+        var rules = new List<CleanupRule>(builtIn.Rules);
+        foreach (string file in files)
+        {
+            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new CatalogException("Файл каталога не должен быть ссылкой.");
+            using Stream stream = File.OpenRead(file);
+            CleanupCatalog user = Load(stream, minimumVersion: 1);
+            if (user.Rules.Count > 128) throw new CatalogException("Не более 128 правил в наборе.");
+            foreach (CleanupRule rule in user.Rules)
+            {
+                if (rule.Action != "delete") throw new CatalogException("Пользовательские наборы поддерживают только файловые правила.");
+                rules.Add(rule with { RiskClass = RiskClass.Expert, Consequence = Consequence.Lost, AutomationEligible = false,
+                    TitleRu = "[Пользовательское] " + rule.TitleRu,
+                    SideEffectsRu = "Непроверенное правило: возможна потеря данных. " + rule.SideEffectsRu });
+            }
+        }
+        if (rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != rules.Count) throw new CatalogException("Повторяющиеся ID правил.");
+        return builtIn with { Rules = rules };
+    }
+
     // minimumVersion: the newest version already accepted; an older catalog is a downgrade.
     public static CleanupCatalog Load(Stream stream, int minimumVersion = 0)
     {

@@ -9,8 +9,8 @@ public enum ThemeChoice { System = 0, Light = 1, Dark = 2 }
 
 internal sealed record AppSettings(ThemeChoice Theme = ThemeChoice.System)
 {
-    private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spacewise", "settings.json");
+    public bool AssistantEnabled { get; init; } = true;
+    private static string FilePath => Path.Combine(AppPaths.Data, "settings.json");
 
     // A missing or damaged file means defaults; settings never block startup.
     public static AppSettings Load()
@@ -45,8 +45,13 @@ internal static class ThemeService
         Apply(AppSettings.Load().Theme);
         SystemEvents.UserPreferenceChanged += (_, e) =>
         {
-            if (e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color && Current == ThemeChoice.System)
-                Application.Current?.Dispatcher.BeginInvoke(() => Apply(ThemeChoice.System));
+            if (e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.Accessibility)
+                Application.Current?.Dispatcher.BeginInvoke(() => Apply(Current));
+        };
+        SystemParameters.StaticPropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SystemParameters.HighContrast))
+                Application.Current?.Dispatcher.BeginInvoke(() => Apply(Current));
         };
     }
 

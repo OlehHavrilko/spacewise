@@ -245,6 +245,24 @@ public sealed class ExecutionStore(DatabaseWriter journal)
     public Task<long?> VerifyJournalAsync(CancellationToken cancellation = default) =>
         journal.ExecuteAsync(DecisionJournal.FirstBrokenRow, cancellation);
 
+    public Task<int> RecordFeedbackAsync(string findingKey, string verdict, DateTime utc, CancellationToken cancellation = default)
+    {
+        if (string.IsNullOrWhiteSpace(findingKey) || findingKey.Length > 200) throw new ArgumentException("Invalid feedback key.", nameof(findingKey));
+        if (verdict is not ("ok" or "problem")) throw new ArgumentException("Invalid feedback verdict.", nameof(verdict));
+        return journal.ExecuteAsync(connection =>
+        {
+            using SqliteCommand insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO feedback(finding_key, verdict, created_utc)
+                SELECT $key, $verdict, $utc WHERE NOT EXISTS (SELECT 1 FROM feedback WHERE finding_key = $key)
+                """;
+            insert.Parameters.AddWithValue("$key", findingKey);
+            insert.Parameters.AddWithValue("$verdict", verdict);
+            insert.Parameters.AddWithValue("$utc", utc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            return insert.ExecuteNonQuery();
+        }, cancellation);
+    }
+
     private static void LogQuarantineEvent(SqliteConnection connection, SqliteTransaction transaction, long id, DateTime utc, string action)
     {
         using SqliteCommand read = connection.CreateCommand();

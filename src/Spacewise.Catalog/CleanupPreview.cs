@@ -21,7 +21,8 @@ public sealed record RulePreview(CleanupRule Rule, IReadOnlyList<PreviewItem> It
 
 // FR-CLN-013: preview is the selection the executor will run, without mutation.
 public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, UserFolders folders, TimeProvider time,
-    IProcessList? processes = null, ILockInspector? locks = null, Func<string, FileIdentity?>? readIdentity = null)
+    IProcessList? processes = null, ILockInspector? locks = null, Func<string, FileIdentity?>? readIdentity = null,
+    ICleanupPathPolicy? pathPolicy = null)
 {
     // Restart Manager cost grows with registered files; larger rules are sampled.
     public const int MaximumLockCheck = 2000;
@@ -63,7 +64,7 @@ public sealed class CleanupPreviewer(CleanupCatalog catalog, IFileTree tree, Use
                     string relative = file.Path[(root.Length + 1)..];
                     if (!include.Any(g => g.IsMatch(relative)) || !seen.Add(file.Path)) continue;
                     if (MetadataScanPolicy.ShouldSkip(file.Attributes)) { deferred++; continue; }
-                    if (!ProtectedPaths.Check(file.Path, folders).Allowed) { denied++; continue; }
+                    if (!(pathPolicy?.Check(file.Path) ?? ProtectedPaths.Check(file.Path, folders)).Allowed) { denied++; continue; }
                     if (target.MinAgeDays > 0 && file.LastWriteUtc > now.AddDays(-target.MinAgeDays)) { tooRecent++; continue; }
                     FileIdentity? identity = readIdentity?.Invoke(file.Path);
                     if (readIdentity is not null && identity is null) { deferred++; continue; }

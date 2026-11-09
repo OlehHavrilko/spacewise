@@ -5,8 +5,10 @@ using Spacewise.Inference;
 
 namespace Spacewise.Desktop;
 
-public sealed class LocalAssistantClient(PinnedModelInstaller model)
+public sealed class LocalAssistantClient(PinnedModelInstaller model) : IAssistantProvider
 {
+    public string Id => model.Model.Id;
+    public bool IsAvailable => model.IsInstalled;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -24,15 +26,19 @@ public sealed class LocalAssistantClient(PinnedModelInstaller model)
 
         string safeQuestion = AssistantResponseValidator.RedactPaths(question);
         safeQuestion = new(safeQuestion.Where(c => !char.IsControl(c)).Take(500).ToArray());
-        var request = new InferenceRequest(model.ModelPath, safeQuestion, facts);
+        var request = new InferenceRequest(model.ModelPath, safeQuestion, facts, model.Model);
         var start = new ProcessStartInfo(worker)
         {
+            Arguments = "--worker",
             WorkingDirectory = Path.GetDirectoryName(worker)!,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardInputEncoding = new System.Text.UTF8Encoding(false),
+            StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            StandardErrorEncoding = new System.Text.UTF8Encoding(false),
         };
         using Process process = Process.Start(start) ?? throw new InvalidOperationException(Strings.Get("AI.ProcessStartFailed"));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
@@ -47,13 +53,24 @@ public sealed class LocalAssistantClient(PinnedModelInstaller model)
             string output = await stdout;
             string error = await stderr;
             if (process.ExitCode != 0)
-                throw new InvalidOperationException(Strings.Get("AI.ProcessFailed") + error.Trim());
+            {
+                string diagnostic = string.Join(" ", error.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).TakeLast(3));
+                diagnostic = AssistantResponseValidator.RedactPaths(diagnostic);
+                throw new InvalidOperationException(Strings.Get("AI.ProcessFailed") + diagnostic[..Math.Min(diagnostic.Length, 500)]);
+            }
             return AssistantResponseValidator.Parse(output.Trim(), facts);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
-            throw;
+            throw new TimeoutException(Strings.Get("AI.Timeout"));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
         }
     }
 }

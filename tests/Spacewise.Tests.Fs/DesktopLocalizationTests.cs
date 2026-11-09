@@ -28,7 +28,7 @@ public sealed class DesktopLocalizationTests
                 foreach (string culture in new[] { "ru-RU", "en-US" })
                 {
                     CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
-                    Assert.Equal($"В прежнем карантине: 2 файлов, логически 1 Б; прежний срок хранения до {date:d}. Они сохраняются до ручного возврата или удаления.",
+                    Assert.Equal($"В карантине: 2 файлов, логически 1 Б; записанный срок хранения до {date:d}. Файлы сохраняются до ручного возврата или удаления.",
                         Format("Quarantine.Summary", "2", "1 Б", date));
                     Assert.Equal($"Заполнится примерно {date:d} (через 3 дн.; ", Format("Forecast.Expected", date, "3"));
                     Assert.Equal($"{12.3:0} %", Format("Disk.UsedPercent", 12.3));

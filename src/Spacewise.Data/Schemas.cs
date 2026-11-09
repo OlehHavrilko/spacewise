@@ -42,6 +42,11 @@ public static class Schemas
         CREATE TABLE app_usage_status(app_id INTEGER PRIMARY KEY REFERENCES app(id) ON DELETE CASCADE, status TEXT,
             evidence_level TEXT, window_days INTEGER, winning_source TEXT, computed_utc TEXT);
         """,
+        """
+        CREATE TABLE folder_history(root TEXT NOT NULL, path TEXT NOT NULL, taken_utc TEXT NOT NULL, observed_utc TEXT NOT NULL,
+            logical_bytes INTEGER NOT NULL, files INTEGER NOT NULL, PRIMARY KEY(root, path, taken_utc));
+        CREATE INDEX folder_history_day ON folder_history(taken_utc);
+        """,
     ]);
 
     // Valuable: never trimmed automatically except purged quarantine older than 90 days (FR-DATA-002).

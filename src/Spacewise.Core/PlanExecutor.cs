@@ -50,8 +50,11 @@ public sealed class PlanRejectedException(string message) : Exception(message);
 
 // Runs a plan: re-verifies digest, expiry and the protected-path policy, then removes item by item.
 // A changed, locked or vanished file is skipped and reported; one item never stops the rest.
-public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, TimeProvider time)
+public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, TimeProvider time, ICleanupPathPolicy? pathPolicy = null)
 {
+    public PlanExecutor(IFileRemover remover, ICleanupPathPolicy pathPolicy, TimeProvider time)
+        : this(remover, null!, time, pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy))) { }
+
     public ExecutionReport Execute(CleanupPlan plan, CancellationToken cancellation = default, IExecutionJournal? journal = null)
     {
         PolicyDecision decision = MutationPolicy.Evaluate(plan, time.GetUtcNow().UtcDateTime);
@@ -62,7 +65,7 @@ public sealed class PlanExecutor(IFileRemover remover, UserFolders folders, Time
         {
             PlanItem item = plan.Items[seq];
             if (cancellation.IsCancellationRequested) return new(outcomes, Cancelled: true);
-            if (item.ActionId != "delete" || !ProtectedPaths.Check(item.Path, folders).Allowed)
+            if (item.ActionId != "delete" || !(pathPolicy?.Check(item.Path) ?? ProtectedPaths.Check(item.Path, folders)).Allowed)
             {
                 var refused = new ItemOutcome(item, RemoveStatus.Unsafe);
                 outcomes.Add(refused);

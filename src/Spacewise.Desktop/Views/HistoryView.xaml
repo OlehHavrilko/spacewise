@@ -1,0 +1,54 @@
+<UserControl x:Class="Spacewise.Desktop.Views.HistoryView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:Spacewise.Desktop">
+ <UserControl.Resources><BooleanToVisibilityConverter x:Key="Visible" /></UserControl.Resources>
+
+        <DockPanel Margin="18">
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Expander Header="{DynamicResource Trend.Title}" Margin="0,0,0,8">
+             <StackPanel>
+              <TextBlock Text="{DynamicResource Trend.Help}" TextWrapping="Wrap"/>
+              <ComboBox ItemsSource="{Binding FolderTrendPaths}" SelectedItem="{Binding SelectedTrendPath}" Margin="0,8,0,0" AutomationProperties.Name="{DynamicResource Trend.Title}"/>
+              <local:FolderTrendChart Points="{Binding FolderTrendPoints}" Height="180"/>
+             </StackPanel>
+            </Expander>
+            <WrapPanel>
+              <Button Content="{DynamicResource Ui.054}" Command="{Binding RefreshHistoryCommand}" />
+              <Button Content="{DynamicResource Ui.055}"
+                      Margin="8,0,0,0"
+                      Command="{Binding VerifyJournalCommand}" />
+              <Button Content="{DynamicResource Ui.056}"
+                      Margin="8,0,0,0"
+                      Command="{Binding ExportReportCommand}" />
+              <CheckBox Content="{DynamicResource Ui.057}"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center"
+                        IsChecked="{Binding ExportIncludesPaths}" />
+              <Button Content="{DynamicResource Ui.058}"
+                      Margin="8,0,0,0"
+                      Command="{Binding ExportDiagnosticsCommand}" />
+            </WrapPanel>
+            <TextBlock Text="{Binding HistoryStatus}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap"
+                       AutomationProperties.LiveSetting="Polite" />
+          </StackPanel>
+          <DataGrid ItemsSource="{Binding History}"
+                    IsReadOnly="True"
+                    AutoGenerateColumns="False"
+                    CanUserAddRows="False"
+                    EnableRowVirtualization="True"
+                    AutomationProperties.Name="{DynamicResource Ui.059}">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="{DynamicResource Ui.060}" Binding="{Binding Time, Mode=OneWay}" Width="140" />
+              <DataGridTextColumn Header="{DynamicResource Ui.061}" Binding="{Binding Action, Mode=OneWay}" Width="210" />
+              <DataGridTextColumn Header="{DynamicResource Ui.062}" Binding="{Binding Result, Mode=OneWay}" Width="190" />
+              <DataGridTextColumn Header="{DynamicResource Ui.022}" Binding="{Binding Size, Mode=OneWay}" Width="100" />
+              <DataGridTextColumn Header="{DynamicResource Ui.063}" Binding="{Binding Path, Mode=OneWay}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+
+</UserControl>

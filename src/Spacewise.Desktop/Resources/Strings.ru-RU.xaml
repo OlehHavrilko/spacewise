@@ -1,10 +1,10 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=System.Runtime">
   <sys:String x:Key="Ui.001">Приветствие</sys:String>
   <sys:String x:Key="Ui.002">Как работает Spacewise</sys:String>
-  <sys:String x:Key="Ui.003">Анализ читает только метаданные файлов. Вы сами отмечаете категории и подтверждаете очистку. Файлы удаляются безвозвратно, без карантина и Корзины. Программы не удаляются, права администратора не нужны, фоновых процессов нет. Все действия записываются в журнал на вкладке «История».</sys:String>
+  <sys:String x:Key="Ui.003">Анализ диска читает метаданные. Поиск дубликатов отдельно читает содержимое для сравнения. Вы сами отмечаете категории и подтверждаете безвозвратное удаление. Действия очистки записываются в журнал.</sys:String>
   <sys:String x:Key="Ui.004">Понятно</sys:String>
   <sys:String x:Key="Ui.005">Обзор пространства</sys:String>
-  <sys:String x:Key="Ui.006">Анализ читает только метаданные. После подтверждения очистка удаляет выбранные файлы безвозвратно.</sys:String>
+  <sys:String x:Key="Ui.006">Анализ читает метаданные, поиск дубликатов читает содержимое. Файлы отмеченных категорий удаляются безвозвратно после подтверждения.</sys:String>
   <sys:String x:Key="Ui.007">Папка для анализа</sys:String>
   <sys:String x:Key="Ui.008">Выбрать папку…</sys:String>
   <sys:String x:Key="Ui.009">Исключения: по одному абсолютному пути в строке; регистр не учитывается</sys:String>
@@ -45,7 +45,7 @@
   <sys:String x:Key="Ui.044">Занято</sys:String>
   <sys:String x:Key="Ui.045">Прогноз заполнения</sys:String>
   <sys:String x:Key="Ui.046">Использование</sys:String>
-  <sys:String x:Key="Ui.047">Прочитать использование</sys:String>
+  <sys:String x:Key="Ui.047">Обновить список программ</sys:String>
   <sys:String x:Key="Ui.048">Стереть историю…</sys:String>
   <sys:String x:Key="Ui.049">Программы и их использование</sys:String>
   <sys:String x:Key="Ui.050">Программа</sys:String>
@@ -72,8 +72,8 @@
   <sys:String x:Key="Ui.071">ВАШЕ ПРОСТРАНСТВО</sys:String>
   <sys:String x:Key="Ui.072">Крупнейшие объекты из последнего анализа</sys:String>
   <sys:String x:Key="AI.DefaultQuestion" xml:space="preserve">Объясни последствия найденных категорий. Не предлагай удалять личные данные.</sys:String>
-  <sys:String x:Key="AI.Disclaimer" xml:space="preserve">Необязательная локальная модель Qwen 3.5 2B в отдельном процессе использует GPU через Vulkan, если он доступен, иначе работает на CPU; требуется не менее 8 ГБ ОЗУ. Она получает только сводки категорий и ваш вопрос — не пути очищаемых файлов и не их содержимое. Ответ может ошибаться: модель только объясняет, не выбирает категории и не удаляет файлы.</sys:String>
-  <sys:String x:Key="AI.DownloadButton">Скачать модель (примерно 1,2 ГБ)…</sys:String>
+  <sys:String x:Key="AI.Disclaimer" xml:space="preserve">Необязательная локальная модель работает в отдельном процессе на GPU через Vulkan либо на CPU. Она получает только сводки категорий и ваш вопрос, не пути и содержимое файлов. Ответ может ошибаться: модель только объясняет и ничего не удаляет. Профиль по умолчанию — Qwen 3.5 2B; для него требуется не менее 8 ГБ ОЗУ. Другим моделям может требоваться больше памяти.</sys:String>
+  <sys:String x:Key="AI.DownloadButton">Скачать выбранную модель…</sys:String>
   <sys:String x:Key="AI.InstalledButton">Модель установлена</sys:String>
   <sys:String x:Key="AI.MemoryRequirement">Модели нужно не менее 8 ГБ ОЗУ</sys:String>
   <sys:String x:Key="AI.ExplainButton">Объяснить найденные категории</sys:String>
@@ -100,20 +100,6 @@
   <sys:String x:Key="AI.ProcessMissing">Процесс локальной модели не найден.</sys:String>
   <sys:String x:Key="AI.ProcessStartFailed">Не удалось запустить локальную модель.</sys:String>
   <sys:String x:Key="AI.ProcessFailed">Локальная модель завершилась с ошибкой: </sys:String>
-  <sys:String x:Key="Goal.Title">Подобрать категории под цель</sys:String>
-  <sys:String x:Key="Goal.Note" xml:space="preserve">Укажите, сколько места нужно. Предлагаются только безопасные категории, где данные пересоздаются или скачиваются заново; запущенные приложения, занятые файлы и категории с неполной проверкой исключены. Корзина, системные действия и возможная потеря данных тоже исключены. Это оценка логического размера; проверьте список перед выбором.</sys:String>
-  <sys:String x:Key="Goal.AmountLabel">Нужно освободить, ГБ</sys:String>
-  <sys:String x:Key="Goal.BuildButton">Подобрать безопасные категории</sys:String>
-  <sys:String x:Key="Goal.ApplyButton">Выбрать предложенные</sys:String>
-  <sys:String x:Key="Goal.Summary" xml:space="preserve">Цель: {0}; оценка выбранных категорий: {1} в количестве {2}. Фактическое место измеряется после очистки. </sys:String>
-  <sys:String x:Key="Goal.TargetMet" xml:space="preserve">Цель достигается по оценке. </sys:String>
-  <sys:String x:Key="Goal.Shortfall" xml:space="preserve">Безопасных категорий не хватает примерно на {0}; рискованные данные не добавлялись автоматически. </sys:String>
-  <sys:String x:Key="Goal.Category" xml:space="preserve">• {0}: {1} — {2}</sys:String>
-  <sys:String x:Key="Goal.NoSafeCategories">Для цели пока нет подходящих безопасных категорий.</sys:String>
-  <sys:String x:Key="Goal.Invalid">Введите положительное число ГБ, например 20 или 1,5.</sys:String>
-  <sys:String x:Key="Goal.TooLarge">Цель превышает поддерживаемый объём.</sys:String>
-  <sys:String x:Key="Goal.TotalTooLarge">Суммарная оценка категорий слишком велика для расчёта.</sys:String>
-  <sys:String x:Key="Goal.SelectionApplied">Категории отмечены для проверки. Очистка не запускалась.</sys:String>
   <sys:String x:Key="Common.Unavailable" xml:space="preserve">—</sys:String>
   <sys:String x:Key="File.HardLink" xml:space="preserve">Жёсткая ссылка ({0}): 0 байт выгоды</sys:String>
   <sys:String x:Key="Cleanup.Regenerated" xml:space="preserve">Создастся заново</sys:String>
@@ -151,7 +137,7 @@
   <sys:String x:Key="Cleanup.Estimating" xml:space="preserve">Оценка выполняется…</sys:String>
   <sys:String x:Key="Cleanup.NothingFound" xml:space="preserve">По правилам каталога ничего не найдено</sys:String>
   <sys:String x:Key="Cleanup.EstimateSummary" xml:space="preserve">Оценка: {0} в {1} категориях. </sys:String>
-  <sys:String x:Key="Cleanup.EstimateExplanation" xml:space="preserve">Это сумма логических размеров; сколько освободится на диске, покажет измерение тома после очистки. Файлы удаляются безвозвратно.</sys:String>
+  <sys:String x:Key="Cleanup.EstimateExplanation" xml:space="preserve">Это сумма логических размеров. Изменение свободного места измеряется после удаления.</sys:String>
   <sys:String x:Key="Cleanup.EstimateStopped" xml:space="preserve">Оценка остановлена</sys:String>
   <sys:String x:Key="Cleanup.EstimateFailed" xml:space="preserve">Оценка не выполнена: </sys:String>
   <sys:String x:Key="Cleanup.SelectCategories" xml:space="preserve">Отметьте категории, которые нужно очистить</sys:String>
@@ -160,7 +146,7 @@
   <sys:String x:Key="Cleanup.Rejected" xml:space="preserve">Очистка отклонена: </sys:String>
   <sys:String x:Key="Cleanup.NoFiles" xml:space="preserve">Очистка отклонена: в выбранных категориях нет файлов.</sys:String>
   <sys:String x:Key="Cleanup.ConfirmFiles" xml:space="preserve">Будет удалено файлов: {0} (логически {1}). </sys:String>
-  <sys:String x:Key="Cleanup.ConfirmPermanent" xml:space="preserve">Удаление безвозвратное: файлы не попадут в карантин или Корзину, вернуть их через Spacewise нельзя. </sys:String>
+  <sys:String x:Key="Cleanup.ConfirmPermanent" xml:space="preserve">Удаление безвозвратное. Эти файлы нельзя будет вернуть через Корзину или карантин. </sys:String>
   <sys:String x:Key="Cleanup.ConfirmSkipped" xml:space="preserve">Занятые и изменённые после оценки файлы будут пропущены.&#10;&#10;</sys:String>
   <sys:String x:Key="Cleanup.ConfirmBin" xml:space="preserve">Корзина будет очищена окончательно: объектов {0} (около {1}). </sys:String>
   <sys:String x:Key="Cleanup.ConfirmBinPermanent" xml:space="preserve">Вернуть их будет нельзя, карантин для Корзины не применяется.&#10;&#10;</sys:String>
@@ -187,7 +173,7 @@
   <sys:String x:Key="Quarantine.Expired" xml:space="preserve">Удалено по сроку хранения: {0}. </sys:String>
   <sys:String x:Key="Quarantine.Unavailable" xml:space="preserve">Карантин недоступен: </sys:String>
   <sys:String x:Key="Quarantine.Empty" xml:space="preserve">Карантин пуст</sys:String>
-  <sys:String x:Key="Quarantine.Summary" xml:space="preserve">В прежнем карантине: {0} файлов, логически {1}; прежний срок хранения до {2:d}. Они сохраняются до ручного возврата или удаления.</sys:String>
+  <sys:String x:Key="Quarantine.Summary" xml:space="preserve">В карантине: {0} файлов, логически {1}; записанный срок хранения до {2:d}. Файлы сохраняются до ручного возврата или удаления.</sys:String>
   <sys:String x:Key="Space.Unmeasured" xml:space="preserve">Оценка (логический размер): {0}. Освобождённое место измерить не удалось.</sys:String>
   <sys:String x:Key="Space.Measured" xml:space="preserve">Освобождено на диске (измерено): {0}{1}. Оценка (логический размер): {2}.</sys:String>
   <sys:String x:Key="Space.WhyDifferent" xml:space="preserve">&#10;Почему цифры отличаются: </sys:String>
@@ -245,7 +231,7 @@
   <sys:String x:Key="History.EraseConfirmation" xml:space="preserve">Будет удалена история замеров дисков, которую хранит Spacewise. Журнал Windows о запусках программ не затрагивается, журнал действий очистки тоже остаётся.&#10;&#10;Продолжить?</sys:String>
   <sys:String x:Key="History.Erased" xml:space="preserve">История стёрта: замеров дисков удалено {0}. Данные использования Spacewise не хранит.</sys:String>
   <sys:String x:Key="History.EraseFailed" xml:space="preserve">История не стёрта: </sys:String>
-  <sys:String x:Key="Usage.Instructions" xml:space="preserve">Нажмите «Прочитать использование»: данные берутся из журнала запусков Windows текущего пользователя.</sys:String>
+  <sys:String x:Key="Usage.Instructions" xml:space="preserve">Обновите список и выберите программу. Данные об использовании берутся из журнала запусков текущего пользователя.</sys:String>
   <sys:String x:Key="Usage.Reading" xml:space="preserve">Чтение списка программ и журнала запусков…</sys:String>
   <sys:String x:Key="Usage.Readable" xml:space="preserve">Программ: {0}. Источник: UserAssist (запуски через Пуск и Проводник); запуски другими способами он не видит.</sys:String>
   <sys:String x:Key="Usage.Unreadable" xml:space="preserve">Программ: {0}. Журнал запусков прочитать не удалось: история неизвестна, а не «не используется».</sys:String>
@@ -253,7 +239,41 @@
   <sys:String x:Key="Usage.NoneUnused" xml:space="preserve">Нет программ, для которых данных достаточно, чтобы сказать «не запускалась».</sys:String>
   <sys:String x:Key="Usage.UnusedSummary" xml:space="preserve">{0} программ не запускались {1}+ дней · {2}</sys:String>
   <sys:String x:Key="Usage.UnknownSizes" xml:space="preserve"> (размер неизвестен у {0})</sys:String>
-  <sys:String x:Key="Usage.NoUninstall" xml:space="preserve">. Это подсказка: удаление программ Spacewise не выполняет.</sys:String>
+  <sys:String x:Key="Programs.Navigation">Программы</sys:String>
+  <sys:String x:Key="Programs.Uninstall">Удалить программу…</sys:String>
+  <sys:String x:Key="Programs.Confirm">Запустить штатный деинсталлятор «{0}»? У программы могут быть свои диалоги и параметры удаления данных.</sys:String>
+  <sys:String x:Key="Programs.Changed">Запись программы изменилась. Обновите список и выберите программу ещё раз.</sys:String>
+  <sys:String x:Key="Programs.Unsupported">Для этой записи не поддерживается запуск деинсталлятора из Spacewise. Откройте «Установленные приложения» Windows или лаунчер программы.</sys:String>
+  <sys:String x:Key="Programs.Uninstalling">Ожидание завершения штатного деинсталлятора…</sys:String>
+  <sys:String x:Key="Programs.Restart">Деинсталлятор сообщил о необходимости перезагрузки. Поиск остатков в этом сеансе пропущен.</sys:String>
+  <sys:String x:Key="Programs.ExitCode">Деинсталлятор завершился с кодом {0}. Удаление не подтверждено.</sys:String>
+  <sys:String x:Key="Programs.StillRegistered">Запись программы ещё есть в Windows. Удаление не подтверждено.</sys:String>
+  <sys:String x:Key="Programs.Searching">Удаление подтверждено. Идёт поиск файлов в связанных папках…</sys:String>
+  <sys:String x:Key="Programs.NoLocation">Удаление подтверждено. Подходящих отдельных папок для поиска остатков нет.</sys:String>
+  <sys:String x:Key="Programs.RemnantsTitle">Возможные остатки программы</sys:String>
+  <sys:String x:Key="Programs.StopSearch">Отменить поиск остатков</sys:String>
+  <sys:String x:Key="Programs.SearchCancelled">Программа удалена. Поиск остатков отменён.</sys:String>
+  <sys:String x:Key="Programs.Path">Путь</sys:String>
+  <sys:String x:Key="Programs.Remnants">В связанных папках найдено файлов: {0}. Раскройте список остатков, чтобы просмотреть крупнейшие ({1}).</sys:String>
+  <sys:String x:Key="Programs.Incomplete" xml:space="preserve"> Часть данных не проверена.</sys:String>
+  <sys:String x:Key="Programs.Availability">Действие</sys:String>
+  <sys:String x:Key="Programs.ReviewOnly">Только просмотр</sys:String>
+  <sys:String x:Key="Programs.CanRemove">Можно выбрать</sys:String>
+  <sys:String x:Key="Programs.RemoveFile">Удалить выбранный файл…</sys:String>
+  <sys:String x:Key="Programs.ConfirmRemnant">Окончательно удалить файл «{0}»? Он может содержать настройки или данные пользователя. Восстановить его через Spacewise нельзя.</sys:String>
+  <sys:String x:Key="Programs.OwnershipChanged">Папка снова связана с установленной программой или больше не подходит для удаления.</sys:String>
+  <sys:String x:Key="Programs.Failed" xml:space="preserve">Операция завершилась ошибкой: </sys:String>
+  <sys:String x:Key="Programs.Explain">Спросить локальный ИИ</sys:String>
+  <sys:String x:Key="Programs.EnableAssistant">Включите локальный ИИ в настройках и установите модель на экране помощника.</sys:String>
+  <sys:String x:Key="Programs.Fact">Найденный файл №{0}</sys:String>
+  <sys:String x:Key="Programs.FactNote">По метаданным назначение файла не определено. Проверьте его принадлежность и наличие важных данных.</sys:String>
+  <sys:String x:Key="Programs.FactSettings">Расширение встречается у файлов настроек и данных. Проверьте, нужны ли они для переноса или восстановления настроек.</sys:String>
+  <sys:String x:Key="Programs.FactData">Расширение встречается у баз данных и резервных копий. Сначала проверьте, содержит ли файл данные пользователя.</sys:String>
+  <sys:String x:Key="Programs.FactLog">Расширение встречается у журналов и дампов. Файл может пригодиться для диагностики.</sys:String>
+  <sys:String x:Key="Programs.AssistantQuestion">Какие из возможных остатков стоит проверить в первую очередь и какие есть риски?</sys:String>
+  <sys:String x:Key="Programs.NoAdvice">Модель не выделила файлы для дополнительной проверки.</sys:String>
+  <sys:String x:Key="Analysis.ExplainFile">Спросить ИИ о выбранном файле</sys:String>
+  <sys:String x:Key="Analysis.AssistantQuestion">Что стоит проверить у выбранного файла и какие есть риски?</sys:String>
   <sys:String x:Key="Scan.FolderCount" xml:space="preserve"> папок</sys:String>
   <sys:String x:Key="Scan.StoppedRemainder" xml:space="preserve"> и остаток после остановки</sys:String>
   <sys:String x:Key="Scan.Coverage" xml:space="preserve">Исключено правилами: {0} · Недоступно: {1} · Не досканировано: {2}</sys:String>
@@ -277,4 +297,53 @@
   <sys:String x:Key="Settings.AboutHeader">О программе</sys:String>
   <sys:String x:Key="Settings.Version">Версия {0}</sys:String>
   <sys:String x:Key="Settings.License">Лицензия MIT. Сторонние компоненты перечислены в файле THIRD-PARTY-NOTICES.md в репозитории проекта.</sys:String>
+  <sys:String x:Key="Analysis.Title">Дерево папок и карта пространства</sys:String>
+  <sys:String x:Key="Analysis.Tree">Папки по логическому размеру</sys:String>
+  <sys:String x:Key="Analysis.Map">Карта крупнейших папок</sys:String>
+  <sys:String x:Key="Analysis.ShowAll">Все крупнейшие файлы</sys:String>
+  <sys:String x:Key="Analysis.Empty">Запустите анализ. Карта показывает до 64 крупнейших папок первого уровня; дерево — до трёх уровней.</sys:String>
+  <sys:String x:Key="Analysis.Coverage">Таблица: {0} крупнейших из {1} файлов. Дерево: до трёх уровней. Карта: доли среди 64 крупнейших папок первого уровня, без файлов в корне. Это логический размер, не прогноз освобождения.</sys:String>
+  <sys:String x:Key="Analysis.Truncated" xml:space="preserve"> Достигнут лимит 4096 папок: часть ветвей не показана, общий итог сканирования сохранён.</sys:String>
+  <sys:String x:Key="Analysis.Partial" xml:space="preserve"> Анализ неполный: карта содержит только посещённую часть.</sys:String>
+  <sys:String x:Key="Analysis.Comparison">Предыдущий анализ ({0:g}): {1} → {2}, изменение {3}.</sys:String>
+  <sys:String x:Key="Analysis.ComparisonScope" xml:space="preserve"> Снимки могут отличаться исключениями; изменение не является результатом очистки.</sys:String>
+  <sys:String x:Key="Cleanup.ReportTitle">Отчёт последней очистки</sys:String>
+  <sys:String x:Key="AI.FactualAnswers">Модель выбирает тему и до трёх категорий. Русские объяснения строятся из фактов каталога; свободный текст модели не показывается.</sys:String>
+  <sys:String x:Key="AI.Timeout">Модель не ответила за отведённое время. Процесс остановлен; попробуйте выбрать меньше категорий.</sys:String>
+  <sys:String x:Key="Feedback.Prompt">После проверки приложений отметьте последствия. Отметка хранится только на этом компьютере и не запускает очистку.</sys:String>
+  <sys:String x:Key="Feedback.Ok">Проблем не заметил</sys:String>
+  <sys:String x:Key="Feedback.Problem">Были нежелательные последствия</sys:String>
+  <sys:String x:Key="Feedback.SavedOk">Отметка «без замеченных проблем» сохранена локально.</sys:String>
+  <sys:String x:Key="Feedback.SavedProblem">Отметка о последствиях сохранена локально. Повторно проверьте категории перед следующей очисткой.</sys:String>
+  <sys:String x:Key="Feedback.Failed">Не удалось сохранить отметку. Попробуйте ещё раз.</sys:String>
+  <sys:String x:Key="Cleanup.ReportNote">Логический размер удалённых файлов и фактическое изменение свободного места измеряются отдельно. Другие программы могут менять свободное место во время операции.</sys:String>
+  <sys:String x:Key="Portable.WrongPassword">Неверный пароль или повреждён ключ portable-версии. База не изменена.</sys:String>
+  <sys:String x:Key="Portable.StartFailed" xml:space="preserve">Запуск не выполнен: </sys:String>
+  <sys:String x:Key="Portable.Create">Создать</sys:String>
+  <sys:String x:Key="Portable.Open">Открыть</sys:String>
+  <sys:String x:Key="Portable.Cancel">Отмена</sys:String>
+  <sys:String x:Key="Portable.CreatePrompt">Придумайте пароль для переносимой БД (не менее 12 символов). Без пароля открыть историю и восстановить файлы через приложение будет невозможно.</sys:String>
+  <sys:String x:Key="Portable.OpenPrompt">Введите пароль переносимой БД.</sys:String>
+  <sys:String x:Key="Portable.Repeat">Повторите пароль:</sys:String>
+  <sys:String x:Key="Portable.TooShort">Нужно не менее 12 символов.</sys:String>
+  <sys:String x:Key="Portable.Mismatch">Пароли не совпадают.</sys:String>
+  <sys:String x:Key="Cleanup.ExcludedRecycleBin">Очистка Корзины недоступна при пользовательских исключениях. Обновите оценку.</sys:String>
+  <sys:String x:Key="Analysis.ExportTitle">Сохранить HTML-отчёт</sys:String>
+  <sys:String x:Key="Analysis.ExportPaths">Включить полные пути</sys:String>
+  <sys:String x:Key="Analysis.ExportSaved">HTML-отчёт анализа сохранён.</sys:String>
+  <sys:String x:Key="Analysis.ExportFailed" xml:space="preserve">Не удалось сохранить HTML-отчёт: </sys:String>
+  <sys:String x:Key="Duplicates.Title">Дубликаты</sys:String>
+  <sys:String x:Key="Duplicates.Find">Найти дубликаты (BLAKE3)</sys:String>
+  <sys:String x:Key="Duplicates.Help">Папка и исключения берутся из анализа. Проверяются размеры и содержимое (BLAKE3): до 100 000 кандидатов и 16 ГиБ. Ссылки и облачные заглушки пропускаются. Результаты служат для проверки, автоматического удаления нет.</sys:String>
+  <sys:String x:Key="Duplicates.Running">Сравнение размеров и хеширование содержимого BLAKE3…</sys:String>
+  <sys:String x:Key="Duplicates.Result" xml:space="preserve">Групп: {0}; кандидатов: {1:N0}; прочитано: {2}; пропущено при сравнении: {3:N0}. </sys:String>
+  <sys:String x:Key="Duplicates.Limited">Достигнут лимит анализа.</sys:String>
+  <sys:String x:Key="Duplicates.Coverage">Недоступные файлы и ссылки не сравнивались.</sys:String>
+  <sys:String x:Key="Duplicates.Cancelled">Поиск дубликатов отменён.</sys:String>
+  <sys:String x:Key="Duplicates.Failed" xml:space="preserve">Поиск не выполнен: </sys:String>
+  <sys:String x:Key="Settings.OpenRules">Правила JSON</sys:String>
+  <sys:String x:Key="Trend.Title">Рост папок за 31 день</sys:String>
+  <sys:String x:Key="Trend.Help">Одна точка за день, только полные сканы: до 64 папок на корень, 8 корней. Пропущенные дни не измерялись.</sys:String>
+  <sys:String x:Key="AI.Enabled">Включить локальный ИИ-помощник</sys:String>
+  <sys:String x:Key="AI.Disabled">ИИ отключён. Анализ и очистка доступны без модели.</sys:String>
 </ResourceDictionary>

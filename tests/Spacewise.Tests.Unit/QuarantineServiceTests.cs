@@ -165,6 +165,61 @@ public sealed class QuarantineServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Metadata_maintenance_keeps_held_recent_and_restored_entries()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\old", @"C:\Q\old", 1),
+            (@"C:\T\recent", @"C:\Q\recent", 2), (@"C:\T\held", @"C:\Q\held", 3), (@"C:\T\restored", @"C:\Q\restored", 4));
+        await using (writer)
+        {
+            await writer.ExecuteAsync(c =>
+            {
+                using var command = c.CreateCommand();
+                command.CommandText = """
+                    UPDATE quarantine SET purged_utc = $old WHERE size = 1;
+                    UPDATE quarantine SET purged_utc = $recent WHERE size = 2;
+                    UPDATE quarantine SET restored_utc = $old WHERE size = 4;
+                    """;
+                command.Parameters.AddWithValue("$old", Now.AddDays(-91).ToString("O"));
+                command.Parameters.AddWithValue("$recent", Now.AddDays(-89).ToString("O"));
+                return command.ExecuteNonQuery();
+            }, Ct);
+            Assert.Equal(1, await store.TrimPurgedRecordsAsync(Now, Ct));
+            long remaining = await writer.ExecuteAsync(c =>
+            {
+                using var command = c.CreateCommand();
+                command.CommandText = "SELECT count(*) FROM quarantine";
+                return (long)command.ExecuteScalar()!;
+            }, Ct);
+            Assert.Equal(3, remaining);
+            Assert.Equal(@"C:\T\held", Assert.Single(await store.HeldAsync(Ct)).OriginalPath);
+            Assert.Null(await store.VerifyJournalAsync(Ct));
+        }
+    }
+
+    [Fact]
+    public async Task Feedback_is_local_bounded_deduplicated_and_preserves_audit_chain()
+    {
+        (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5));
+        await using (writer)
+        {
+            var journal = await store.RecentDecisionsAsync(10, Ct);
+            Assert.Equal(1, await store.RecordFeedbackAsync("plan:1", "problem", Now, Ct));
+            Assert.Equal(0, await store.RecordFeedbackAsync("plan:1", "ok", Now, Ct));
+            await Assert.ThrowsAsync<ArgumentException>(() => store.RecordFeedbackAsync("plan:2", "arbitrary", Now, Ct));
+            await Assert.ThrowsAsync<ArgumentException>(() => store.RecordFeedbackAsync(new string('x', 201), "ok", Now, Ct));
+            string verdict = await writer.ExecuteAsync(c =>
+            {
+                using var command = c.CreateCommand();
+                command.CommandText = "SELECT verdict FROM feedback WHERE finding_key = 'plan:1'";
+                return (string)command.ExecuteScalar()!;
+            }, Ct);
+            Assert.Equal("problem", verdict);
+            Assert.Equal(journal, await store.RecentDecisionsAsync(10, Ct));
+            Assert.Null(await store.VerifyJournalAsync(Ct));
+        }
+    }
+
+    [Fact]
     public async Task Recent_decisions_list_newest_first_and_settings_round_trip()
     {
         (ExecutionStore store, DatabaseWriter writer) = await Seed((@"C:\T\a", @"C:\Q\1", 5));

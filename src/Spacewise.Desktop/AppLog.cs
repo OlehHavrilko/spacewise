@@ -7,8 +7,7 @@ namespace Spacewise.Desktop;
 // states and exception type names. The full exception goes to Debug, which is off unless SPACEWISE_LOG=debug.
 public static class AppLog
 {
-    public static string Directory { get; } = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Spacewise", "logs");
+    public static string Directory => System.IO.Path.Combine(AppPaths.Data, "logs");
 
     public static void Start()
     {

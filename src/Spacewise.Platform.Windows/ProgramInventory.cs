@@ -8,6 +8,7 @@ namespace Spacewise.Platform.Windows;
 // files only; sizes are measured separately because walking an install folder can take minutes.
 public static partial class ProgramInventory
 {
+    private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
     private static readonly (RegistryHive Hive, RegistryView View, string Label)[] Roots =
     [
         (RegistryHive.LocalMachine, RegistryView.Registry64, "HKLM"),
@@ -15,7 +16,7 @@ public static partial class ProgramInventory
         (RegistryHive.CurrentUser, RegistryView.Default, "HKCU"),
     ];
 
-    public static IReadOnlyList<InstalledProgram> Read()
+    public static IReadOnlyList<InstalledProgram> Read(bool requireComplete = false)
     {
         var programs = new List<InstalledProgram>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -24,16 +25,16 @@ public static partial class ProgramInventory
             try
             {
                 using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-                using RegistryKey? uninstall = baseKey.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+                using RegistryKey? uninstall = baseKey.OpenSubKey(UninstallKey);
                 if (uninstall is null) continue;
                 foreach (string name in uninstall.GetSubKeyNames())
                 {
                     using RegistryKey? key = uninstall.OpenSubKey(name);
                     if (key is null || FromUninstallKey($"{label}\\{name}", name, key) is not { } program) continue;
-                    if (seen.Add($"{program.Name}|{program.InstallLocation}")) programs.Add(program);
+                    if (requireComplete || seen.Add($"{program.Name}|{program.InstallLocation}")) programs.Add(program);
                 }
             }
-            catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
+            catch (Exception e) when (!requireComplete && e is (System.Security.SecurityException or UnauthorizedAccessException or IOException)) { }
         }
         foreach (InstalledProgram steam in ReadSteam())
             if (seen.Add($"{steam.Name}|{steam.InstallLocation}")) programs.Add(steam);
@@ -48,10 +49,41 @@ public static partial class ProgramInventory
         if (key.GetValue("SystemComponent") is 1 || key.GetValue("ParentKeyName") is not null || key.GetValue("ReleaseType") is string) return null;
         if (keyName.StartsWith("Steam App ", StringComparison.OrdinalIgnoreCase)) return null;
         string? uninstall = key.GetValue("UninstallString") as string;
-        string? location = Clean(key.GetValue("InstallLocation") as string)
+        string? registeredLocation = Clean(key.GetValue("InstallLocation") as string);
+        string? location = registeredLocation
             ?? DirectoryOf(key.GetValue("DisplayIcon") as string) ?? DirectoryOf(uninstall);
         long? size = key.GetValue("EstimatedSize") is int kb && kb > 0 ? kb * 1024L : null;
-        return new(id, name.Trim(), (key.GetValue("Publisher") as string)?.Trim(), location, ProgramKind.Win32, size, uninstall);
+        return new(id, name.Trim(), (key.GetValue("Publisher") as string)?.Trim(), location, ProgramKind.Win32, size, uninstall)
+        {
+            RegisteredInstallLocation = registeredLocation,
+            MsiProductCode = key.GetValue("WindowsInstaller") is 1 && Guid.TryParseExact(keyName, "B", out Guid code) ? code : null,
+        };
+    }
+
+    public static InstalledProgram? ReadRegistration(string id)
+    {
+        using RegistryKey? key = OpenRegistration(id, out string keyName);
+        return key is null ? null : FromUninstallKey(id, keyName, key);
+    }
+
+    public static bool RegistrationExists(string id)
+    {
+        using RegistryKey? key = OpenRegistration(id, out _);
+        return key is not null;
+    }
+
+    private static RegistryKey? OpenRegistration(string id, out string keyName)
+    {
+        string[] parts = id.Split('\\');
+        if (parts.Length != 2 || parts[1].Length == 0) throw new ArgumentException(nameof(id));
+        keyName = parts[1];
+        foreach (var (hive, view, label) in Roots)
+        {
+            if (label != parts[0]) continue;
+            using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
+            return baseKey.OpenSubKey(UninstallKey + "\\" + keyName);
+        }
+        throw new ArgumentException(nameof(id));
     }
 
     // The folder of an executable named in a registry string; Windows' own folders are never an install location.

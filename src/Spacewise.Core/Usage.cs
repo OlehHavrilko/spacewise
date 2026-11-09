@@ -6,7 +6,11 @@ namespace Spacewise.Core;
 public enum ProgramKind { Win32, Steam }
 
 public sealed record InstalledProgram(string Id, string Name, string? Publisher, string? InstallLocation, ProgramKind Kind,
-    long? SizeBytes, string? UninstallString);
+    long? SizeBytes, string? UninstallString)
+{
+    public string? RegisteredInstallLocation { get; init; }
+    public Guid? MsiProductCode { get; init; }
+}
 
 public sealed record UsageObservation(string ExePath, DateTime LastRunUtc, int RunCount);
 

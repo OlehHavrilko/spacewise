@@ -8,4 +8,6 @@
   <SolidColorBrush x:Key="StrokeBrush" Color="#D5D9E0" />
   <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
   <SolidColorBrush x:Key="AccentTextBrush" Color="#FFFFFF" />
+  <SolidColorBrush x:Key="DangerBrush" Color="#A82D35" />
+  <SolidColorBrush x:Key="DangerTextBrush" Color="#FFFFFF" />
 </ResourceDictionary>

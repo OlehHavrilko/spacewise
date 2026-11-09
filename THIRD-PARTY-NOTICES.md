@@ -12,3 +12,5 @@ Spacewise is MIT-licensed (see `LICENSE`). It uses the components below under th
 | Qwen 3.5 2B (GGUF Q4_K_M) | optional local assistant model, downloaded by the user on request, not shipped in the installer | Apache-2.0 (verify on the model card of the pinned revision) |
 | WiX Toolset 5 | installer build only | MS-RL (build tool, not redistributed) |
 | xUnit v3 | tests only | Apache-2.0 |
+| Avalonia | Linux desktop interface and headless UI tests | MIT |
+| Blake3.NET (managed package) | duplicate content analysis | BSD-2-Clause |

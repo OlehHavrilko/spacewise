@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Spacewise.Core/Spacewise.Core.csproj" />
+    <Project Path="src/Spacewise.Platform.Linux/Spacewise.Platform.Linux.csproj" />
+    <Project Path="src/Spacewise.Linux/Spacewise.Linux.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Spacewise.Tests.Linux/Spacewise.Tests.Linux.csproj" />
+  </Folder>
+</Solution>

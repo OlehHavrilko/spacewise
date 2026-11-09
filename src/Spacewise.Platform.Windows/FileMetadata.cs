@@ -55,6 +55,11 @@ public static class FileMetadata
         if (!OperatingSystem.IsWindows()) return null;
         using SafeFileHandle handle = CreateFileW(@"\\?\" + path, FileReadAttributes, ShareAll, IntPtr.Zero,
             OpenExisting, BackupSemantics | OpenReparsePoint, IntPtr.Zero);
+        return TryRead(handle);
+    }
+
+    public static FileDetails? TryRead(SafeFileHandle handle)
+    {
         if (handle.IsInvalid) return null;
         if (!GetFileInformationByHandleEx(handle, FileStandardInfoClass, out FileStandardInfo standard,
                 Marshal.SizeOf<FileStandardInfo>()))

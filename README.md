@@ -12,7 +12,7 @@
 
 - **Публичная версия 0.4.0** доступна на [GitHub Releases](https://github.com/OlehHavrilko/spacewise/releases/tag/v0.4.0). Там есть MSI и portable ZIP для Windows x64 и файл с SHA-256. Пакеты выпущены без доверенной цифровой подписи.
 - **Сборка из исходников** также доступна. Команды для MSI и portable ZIP приведены ниже.
-- **Linux** поставляется отдельной ранней сборкой. Основная разработка сейчас ведётся для Windows. [Инструкция для Linux](docs/LINUX.md)
+- **Linux 0.4.0 x64** доступна отдельным архивом и проверена на Ubuntu 24.04. [Скачать Linux-версию](https://github.com/OlehHavrilko/spacewise/releases/download/v0.4.0/Spacewise-0.4.0-linux-x64.tar.gz) · [Инструкция для Linux](docs/LINUX.md)
 
 MSI требует прав администратора для установки. Само приложение запускается с обычными правами и хранит данные в `%LOCALAPPDATA%\Spacewise`. В [portable-режиме](docs/PORTABLE.md) данные находятся в каталоге `Data` рядом с приложением.
 

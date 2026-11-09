@@ -4,14 +4,14 @@
 
 ## Запуск
 
-Распакуйте `Spacewise-linux-x64.tar.gz` в собственную папку и запустите:
+Скачайте [архив Spacewise 0.4.0 для Linux x64](https://github.com/OlehHavrilko/spacewise/releases/download/v0.4.0/Spacewise-0.4.0-linux-x64.tar.gz). [SHA-256](https://github.com/OlehHavrilko/spacewise/releases/download/v0.4.0/SHA256SUMS-linux.txt)
 
 ```sh
-chmod u+x Spacewise/Spacewise.Linux
+tar -xzf Spacewise-0.4.0-linux-x64.tar.gz
 ./Spacewise/Spacewise.Linux
 ```
 
-Нужны Linux с glibc и `statx`, графическая сессия X11 либо совместимость XWayland, стандартные зависимости Avalonia: X11, fontconfig, ICU, OpenSSL. Проверенная среда: Ubuntu 24.04, x86-64, WSL2, Xvfb. ARM64 можно собрать, но запуск на ARM64 пока не проверен. Не запускайте приложение через `sudo`.
+Нужны Linux с glibc и `statx`, графическая сессия X11 либо совместимость XWayland, стандартные зависимости Avalonia: X11, fontconfig, ICU, OpenSSL. Архив проверен на Ubuntu 24.04 x64 в GitHub Actions. Все 17 тестов прошли, включая карантин и восстановление. Окно запускали через Xvfb. [Протокол](https://github.com/OlehHavrilko/spacewise/actions/runs/42635069439) ARM64 можно собрать, но запуск на ARM64 пока не проверен. Не запускайте приложение через `sudo`.
 
 ## Что работает
 

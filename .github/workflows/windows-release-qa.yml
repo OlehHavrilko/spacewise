@@ -1,0 +1,63 @@
+name: Windows release QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-release-qa.yml
+      - tests/Verify-WindowsUpgrade.ps1
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Build candidate packages
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { throw 'WiX tool restore failed' }
+          dotnet tool run wix -- extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE -ne 0) { throw 'WiX UI extension restore failed' }
+          ./installer/build.ps1 -Version 0.4.0
+          ./installer/build-portable.ps1 -Version 0.4.0
+      - name: Check MSI upgrade, removal and portable launches
+        shell: pwsh
+        run: |
+          $previous = Join-Path $env:RUNNER_TEMP 'Spacewise-0.3.0-x64.msi'
+          Invoke-WebRequest 'https://github.com/OlehHavrilko/spacewise/releases/download/v0.3.0/Spacewise-0.3.0-x64.msi' -OutFile $previous
+          if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne 'ef1f786fb3349f38c0758787cea7a351c0e001a145707934006d3a2abfd317fd') {
+            throw 'The published 0.3.0 MSI checksum differs'
+          }
+          $msi = @(Get-ChildItem -LiteralPath artifacts -Recurse -File -Filter 'Spacewise-0.4.0-x64.msi')
+          $zip = @(Get-ChildItem -LiteralPath artifacts -Recurse -File -Filter 'Spacewise-0.4.0-win-x64-portable.zip')
+          if ($msi.Count -ne 1 -or $zip.Count -ne 1) { throw 'Expected one MSI and one portable ZIP' }
+          ./tests/Verify-WindowsUpgrade.ps1 -PreviousMsi $previous -CandidateMsi $msi[0].FullName -PortableZip $zip[0].FullName
+          New-Item -ItemType Directory -Path artifacts/release | Out-Null
+          Copy-Item -LiteralPath $msi[0].FullName,$zip[0].FullName -Destination artifacts/release
+          Get-ChildItem -LiteralPath artifacts/release -File | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content -LiteralPath artifacts/release/SHA256SUMS.txt -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success()
+        with:
+          name: Spacewise-0.4.0-windows-x64
+          path: artifacts/release/
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: Windows-MSI-logs
+          path: ${{ runner.temp }}/spacewise-upgrade/*.log
+          if-no-files-found: ignore

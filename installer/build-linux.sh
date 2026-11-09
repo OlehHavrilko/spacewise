@@ -10,6 +10,7 @@ trap 'echo "Build staging retained: $stage"' EXIT
 dotnet publish "$root/src/Spacewise.Linux" -c Release -r "$rid" --self-contained -o "$stage/Spacewise"
 chmod u+x "$stage/Spacewise/Spacewise.Linux"
 cp "$root/docs/LINUX.md" "$stage/Spacewise/README.md"
+cp "$root/LICENSE" "$root/THIRD-PARTY-NOTICES.md" "$stage/Spacewise/"
 archive="$stage/Spacewise-$rid.tar.gz"
 tar -czf "$archive" -C "$stage" Spacewise
 sha256sum "$archive"

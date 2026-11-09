@@ -1,0 +1,71 @@
+name: Linux release QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload the checked Linux assets to v0.4.0
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Test Linux scanning, quarantine, restore and UI
+        run: |
+          test "$(id -u)" -ne 0
+          dotnet run --project tests/Spacewise.Tests.Linux -c Release
+      - name: Build and check the extracted archive
+        run: |
+          sh installer/build-linux.sh linux-x64
+          mkdir artifacts/linux-release
+          cp artifacts/linux.*/Spacewise-linux-x64.tar.gz artifacts/linux-release/Spacewise-0.4.0-linux-x64.tar.gz
+          smoke=$(mktemp -d)
+          tar -xzf artifacts/linux-release/Spacewise-0.4.0-linux-x64.tar.gz -C "$smoke"
+          test -x "$smoke/Spacewise/Spacewise.Linux"
+          test -s "$smoke/Spacewise/LICENSE"
+          test -s "$smoke/Spacewise/THIRD-PARTY-NOTICES.md"
+          if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb xauth
+          fi
+          XDG_DATA_HOME="$smoke/data" XDG_CACHE_HOME="$smoke/cache" xvfb-run -a "$smoke/Spacewise/Spacewise.Linux" --smoke-test
+          cd artifacts/linux-release
+          sha256sum Spacewise-0.4.0-linux-x64.tar.gz > SHA256SUMS-linux.txt
+          sha256sum -c SHA256SUMS-linux.txt
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Spacewise-0.4.0-linux-x64
+          path: artifacts/linux-release/
+          compression-level: 0
+          if-no-files-found: error
+
+  publish:
+    needs: linux-x64
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: Spacewise-0.4.0-linux-x64
+      - name: Upload checked assets to the public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum -c SHA256SUMS-linux.txt
+          test "$(gh release view v0.4.0 --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')" = false
+          gh release upload v0.4.0 Spacewise-0.4.0-linux-x64.tar.gz SHA256SUMS-linux.txt --repo "$GITHUB_REPOSITORY"
